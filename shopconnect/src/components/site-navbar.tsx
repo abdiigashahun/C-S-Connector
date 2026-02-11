@@ -9,7 +9,7 @@ export function SiteNavbar() {
           href="/"
           className="group inline-flex items-center gap-2 rounded-md px-2 py-1 transition hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-linear-to-br from-neutral-900 via-neutral-800 to-neutral-700 text-sm font-bold text-white shadow-sm ring-1 ring-black/5 transition duration-300 group-hover:scale-105 group-hover:shadow-md">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-linear-to-br from-white via-white to-neutral-100 text-sm font-bold text-neutral-900 shadow-sm ring-1 ring-black/5 transition duration-300 group-hover:scale-105 group-hover:shadow-md">
             SC
           </span>
           <span className="sr-only">ShopConnect</span>
