@@ -26,6 +26,14 @@ type ProductDetailViewProps = {
   initialLikes: number;
 };
 
+type ProductComment = {
+  id: number;
+  product_id: number;
+  user_email: string;
+  comment: string;
+  created_at: string;
+};
+
 const fallbackImage =
   "data:image/svg+xml;utf8," +
   encodeURIComponent(
@@ -37,6 +45,34 @@ export function ProductDetailView({ product, initialViews, initialLikes }: Produ
   const [likes, setLikes] = useState(initialLikes);
   const [liked, setLiked] = useState(false);
   const [isLikeLoading, setIsLikeLoading] = useState(false);
+  const [comments, setComments] = useState<ProductComment[]>([]);
+  const [commentText, setCommentText] = useState("");
+  const [commentMessage, setCommentMessage] = useState<string | null>(null);
+  const [isPostingComment, setIsPostingComment] = useState(false);
+  const [canComment, setCanComment] = useState(false);
+  const [isOwnerViewer, setIsOwnerViewer] = useState(false);
+  const [viewerEmail, setViewerEmail] = useState("");
+  const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
+  const [editingCommentText, setEditingCommentText] = useState("");
+  const [isSavingComment, setIsSavingComment] = useState(false);
+  const [isDeletingCommentId, setIsDeletingCommentId] = useState<number | null>(null);
+
+  useEffect(() => {
+    const loadComments = async () => {
+      const response = await fetch(`/api/products/${product.id}/comments`);
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = (await response.json().catch(() => null)) as
+        | { data?: ProductComment[] }
+        | null;
+
+      setComments(payload?.data ?? []);
+    };
+
+    void loadComments();
+  }, [product.id]);
 
   useEffect(() => {
     const trackView = async () => {
@@ -46,7 +82,21 @@ export function ProductDetailView({ product, initialViews, initialLikes }: Produ
         (session as { data?: { session?: { user?: { email?: string } } } })?.data?.session?.user?.email ??
         (session as { user?: { email?: string } })?.user?.email;
 
+      if (email) {
+        setViewerEmail(email.toLowerCase());
+        const ownerCheck = await fetch(`/api/owner-access?email=${encodeURIComponent(email)}`);
+        const ownerPayload = (await ownerCheck.json().catch(() => null)) as
+          | { isOwner?: boolean }
+          | null;
+        const ownerViewer = Boolean(ownerPayload?.isOwner);
+        setIsOwnerViewer(ownerViewer);
+        setCanComment(!ownerViewer);
+      }
+
       if (!email) {
+        setCanComment(false);
+        setIsOwnerViewer(false);
+        setViewerEmail("");
         return;
       }
 
@@ -110,6 +160,113 @@ export function ProductDetailView({ product, initialViews, initialLikes }: Produ
     setIsLikeLoading(false);
   };
 
+  const postComment = async () => {
+    const comment = commentText.trim();
+    if (!comment) {
+      setCommentMessage("Please write a comment first.");
+      return;
+    }
+
+    setIsPostingComment(true);
+    setCommentMessage(null);
+
+    const response = await fetch(`/api/products/${product.id}/comments`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ comment }),
+    });
+
+    const payload = (await response.json().catch(() => null)) as
+      | { error?: string; data?: ProductComment }
+      | null;
+
+    if (!response.ok) {
+      setCommentMessage(payload?.error ?? "Unable to post comment.");
+      setIsPostingComment(false);
+      return;
+    }
+
+    if (payload?.data) {
+      setComments((current) => [payload.data as ProductComment, ...current]);
+    }
+    setCommentText("");
+    setCommentMessage("Comment posted.");
+    setIsPostingComment(false);
+  };
+
+  const startEditComment = (comment: ProductComment) => {
+    setEditingCommentId(comment.id);
+    setEditingCommentText(comment.comment);
+    setCommentMessage(null);
+  };
+
+  const cancelEditComment = () => {
+    setEditingCommentId(null);
+    setEditingCommentText("");
+  };
+
+  const saveEditedComment = async (commentId: number) => {
+    const nextText = editingCommentText.trim();
+    if (!nextText) {
+      setCommentMessage("Comment cannot be empty.");
+      return;
+    }
+
+    setIsSavingComment(true);
+    const response = await fetch(`/api/products/${product.id}/comments`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ id: commentId, comment: nextText }),
+    });
+
+    const payload = (await response.json().catch(() => null)) as
+      | { error?: string; data?: ProductComment }
+      | null;
+
+    if (!response.ok || !payload?.data) {
+      setCommentMessage(payload?.error ?? "Unable to update comment.");
+      setIsSavingComment(false);
+      return;
+    }
+
+    setComments((current) =>
+      current.map((item) => (item.id === commentId ? payload.data ?? item : item))
+    );
+    setEditingCommentId(null);
+    setEditingCommentText("");
+    setCommentMessage("Comment updated.");
+    setIsSavingComment(false);
+  };
+
+  const deleteComment = async (commentId: number) => {
+    setIsDeletingCommentId(commentId);
+    const response = await fetch(`/api/products/${product.id}/comments`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ id: commentId }),
+    });
+
+    const payload = (await response.json().catch(() => null)) as
+      | { error?: string }
+      | null;
+
+    if (!response.ok) {
+      setCommentMessage(payload?.error ?? "Unable to delete comment.");
+      setIsDeletingCommentId(null);
+      return;
+    }
+
+    setComments((current) => current.filter((item) => item.id !== commentId));
+    setCommentMessage("Comment deleted.");
+    setIsDeletingCommentId(null);
+  };
+
   return (
     <main className="mx-auto min-h-screen w-full max-w-5xl px-4 pt-24 pb-12">
       <div className="mb-4">
@@ -150,6 +307,102 @@ export function ProductDetailView({ product, initialViews, initialLikes }: Produ
           <p className="text-xs text-muted-foreground">
             Posted: {product.created_at ? new Date(product.created_at).toLocaleDateString() : "N/A"}
           </p>
+        </CardContent>
+      </Card>
+
+      <Card className="mt-6 py-4">
+        <CardHeader>
+          <CardTitle className="text-lg">Comments ({comments.length})</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {canComment ? (
+            <div className="space-y-2">
+              <textarea
+                value={commentText}
+                onChange={(event) => setCommentText(event.target.value)}
+                rows={3}
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                placeholder="Write your comment..."
+              />
+              <div className="flex items-center gap-2">
+                <Button size="sm" onClick={postComment} disabled={isPostingComment}>
+                  {isPostingComment ? "Posting..." : "Post comment"}
+                </Button>
+                {commentMessage ? (
+                  <p className="text-xs text-muted-foreground">{commentMessage}</p>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Login as customer to add a comment.
+            </p>
+          )}
+
+          {comments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No comments yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {comments.map((item) => (
+                <div key={item.id} className="rounded-md border p-3">
+                  <p className="text-xs text-muted-foreground">{item.user_email}</p>
+                  {editingCommentId === item.id ? (
+                    <div className="mt-2 space-y-2">
+                      <textarea
+                        value={editingCommentText}
+                        onChange={(event) => setEditingCommentText(event.target.value)}
+                        rows={3}
+                        className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                      />
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => void saveEditedComment(item.id)}
+                          disabled={isSavingComment}
+                        >
+                          {isSavingComment ? "Saving..." : "Save"}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={cancelEditComment}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-sm">{item.comment}</p>
+                  )}
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    {new Date(item.created_at).toLocaleString()}
+                  </p>
+
+                  {editingCommentId !== item.id ? (
+                    <div className="mt-2 flex items-center gap-2">
+                      {viewerEmail && viewerEmail === item.user_email.toLowerCase() ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => startEditComment(item)}
+                        >
+                          Edit
+                        </Button>
+                      ) : null}
+
+                      {viewerEmail &&
+                      (viewerEmail === item.user_email.toLowerCase() || isOwnerViewer) ? (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => void deleteComment(item.id)}
+                          disabled={isDeletingCommentId === item.id}
+                        >
+                          {isDeletingCommentId === item.id ? "Deleting..." : "Delete"}
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </main>

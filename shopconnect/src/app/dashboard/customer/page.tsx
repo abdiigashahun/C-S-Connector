@@ -13,7 +13,7 @@ import {
   MapPin,
   Menu,
   Search,
-  Sparkles,
+  Send,
   Star,
   Tag,
 } from "lucide-react";
@@ -68,6 +68,14 @@ type NotificationItem = {
   description: string;
   href: string;
   type: "offer" | "info" | "update";
+};
+
+type ProductComment = {
+  id: number;
+  product_id: number;
+  user_email: string;
+  comment: string;
+  created_at: string;
 };
 
 const dummyImage =
@@ -156,6 +164,12 @@ export default function CustomerDashboardPage() {
   const [productLikes, setProductLikes] = useState<Record<number, number>>({});
   const [likedProducts, setLikedProducts] = useState<Record<number, boolean>>({});
   const [likingProductId, setLikingProductId] = useState<number | null>(null);
+  const [openCommentProductId, setOpenCommentProductId] = useState<number | null>(null);
+  const [commentDrafts, setCommentDrafts] = useState<Record<number, string>>({});
+  const [commentPostingProductId, setCommentPostingProductId] = useState<number | null>(null);
+  const [commentMessages, setCommentMessages] = useState<Record<number, string>>({});
+  const [productComments, setProductComments] = useState<Record<number, ProductComment[]>>({});
+  const [loadingCommentsProductId, setLoadingCommentsProductId] = useState<number | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -438,6 +452,99 @@ export default function CustomerDashboardPage() {
     }
 
     setLikingProductId(null);
+  };
+
+  const loadCommentsForProduct = async (productId: number) => {
+    setLoadingCommentsProductId(productId);
+
+    const response = await fetch(`/api/products/${productId}/comments`);
+    if (!response.ok) {
+      setCommentMessages((current) => ({
+        ...current,
+        [productId]: "Unable to load comments.",
+      }));
+      setLoadingCommentsProductId(null);
+      return;
+    }
+
+    const payload = (await response.json().catch(() => null)) as
+      | { data?: ProductComment[] }
+      | null;
+
+    setProductComments((current) => ({
+      ...current,
+      [productId]: payload?.data ?? [],
+    }));
+    setLoadingCommentsProductId(null);
+  };
+
+  const handleToggleCommentPanel = async (productId: number) => {
+    const isClosing = openCommentProductId === productId;
+    setOpenCommentProductId(isClosing ? null : productId);
+
+    if (isClosing) {
+      return;
+    }
+
+    if (!(productId in productComments)) {
+      await loadCommentsForProduct(productId);
+    }
+  };
+
+  const handlePostInlineComment = async (productId: number) => {
+    const comment = (commentDrafts[productId] ?? "").trim();
+    if (!comment) {
+      setCommentMessages((current) => ({
+        ...current,
+        [productId]: "Write a comment first.",
+      }));
+      return;
+    }
+
+    setCommentPostingProductId(productId);
+    setCommentMessages((current) => ({
+      ...current,
+      [productId]: "",
+    }));
+
+    const response = await fetch(`/api/products/${productId}/comments`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ comment }),
+    });
+
+    const payload = (await response.json().catch(() => null)) as
+      | { error?: string; data?: ProductComment }
+      | null;
+
+    if (!response.ok) {
+      setCommentMessages((current) => ({
+        ...current,
+        [productId]: payload?.error ?? "Unable to send comment.",
+      }));
+      setCommentPostingProductId(null);
+      return;
+    }
+
+    setCommentDrafts((current) => ({
+      ...current,
+      [productId]: "",
+    }));
+
+    if (payload?.data) {
+      setProductComments((current) => ({
+        ...current,
+        [productId]: [payload.data as ProductComment, ...(current[productId] ?? [])],
+      }));
+    }
+
+    setCommentMessages((current) => ({
+      ...current,
+      [productId]: "Comment sent.",
+    }));
+    setCommentPostingProductId(null);
   };
 
   return (
@@ -809,6 +916,64 @@ export default function CustomerDashboardPage() {
                         <Heart className="mr-1 size-3" />
                         {productLikes[product.id] ?? 0} Like
                       </Button>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => void handleToggleCommentPanel(product.id)}
+                      >
+                        Comment ({productComments[product.id]?.length ?? 0})
+                      </Button>
+
+                      {openCommentProductId === product.id ? (
+                        <div className="space-y-2 rounded-md border bg-muted/20 p-2">
+                          {loadingCommentsProductId === product.id ? (
+                            <p className="text-xs text-muted-foreground">Loading comments...</p>
+                          ) : (productComments[product.id]?.length ?? 0) === 0 ? (
+                            <p className="text-xs text-muted-foreground">No comments yet.</p>
+                          ) : (
+                            <div className="max-h-40 space-y-2 overflow-y-auto pr-1">
+                              {(productComments[product.id] ?? []).map((item) => (
+                                <div key={item.id} className="rounded-md border bg-background p-2">
+                                  <p className="text-[11px] text-muted-foreground">{item.user_email}</p>
+                                  <p className="text-xs">{item.comment}</p>
+                                  <p className="mt-1 text-[10px] text-muted-foreground">
+                                    {new Date(item.created_at).toLocaleString()}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="flex items-start gap-2">
+                            <Input
+                              value={commentDrafts[product.id] ?? ""}
+                              onChange={(event) =>
+                                setCommentDrafts((current) => ({
+                                  ...current,
+                                  [product.id]: event.target.value,
+                                }))
+                              }
+                              placeholder="Write comment..."
+                            />
+                            <Button
+                              size="icon"
+                              onClick={() => void handlePostInlineComment(product.id)}
+                              disabled={commentPostingProductId === product.id}
+                              aria-label="Send comment"
+                            >
+                              <Send className="size-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {commentMessages[product.id] ? (
+                        <p className="text-xs text-muted-foreground">{commentMessages[product.id]}</p>
+                      ) : null}
                     </div>
                   </CardContent>
                 </Card>
