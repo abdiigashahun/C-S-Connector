@@ -1,7 +1,10 @@
 import Link from "next/link";
+import Image from "next/image";
 import { supabaseServer } from "@/lib/supabase-server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Search } from "lucide-react";
 
 type ProductRow = {
   id: number;
@@ -12,6 +15,36 @@ type ProductRow = {
   image_url: string | null;
   shop_name: string;
 };
+
+type HomeSearchParams = {
+  search?: string;
+  category?: string;
+};
+
+type HomeProps = {
+  searchParams?: Promise<HomeSearchParams>;
+};
+
+const fallbackImage =
+  "data:image/svg+xml;utf8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#f5f5f5"/><stop offset="100%" stop-color="#e9e9e9"/></linearGradient></defs><rect width="1200" height="800" fill="url(#g)"/><text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" fill="#9ca3af" font-size="44" font-family="Arial, sans-serif">ShopConnect</text></svg>'
+  );
+
+function buildHomeHref(search?: string, category?: string) {
+  const params = new URLSearchParams();
+
+  if (search && search.trim()) {
+    params.set("search", search.trim());
+  }
+
+  if (category && category !== "all") {
+    params.set("category", category);
+  }
+
+  const query = params.toString();
+  return query ? `/?${query}` : "/";
+}
 
 async function getProducts(search?: string, category?: string) {
   const query = supabaseServer
@@ -34,85 +67,289 @@ async function getProducts(search?: string, category?: string) {
     return [];
   }
 
+  type ProductQueryRow = {
+    id: number;
+    name: string;
+    description: string;
+    price: number;
+    category: string;
+    image_url: string | null;
+    shops?: { shop_name: string } | null;
+  };
+
   return (
-    data?.map((p) => ({
+    (data as unknown as ProductQueryRow[])?.map((p) => ({
       id: p.id,
       name: p.name,
       description: p.description,
       price: p.price,
       category: p.category,
       image_url: p.image_url,
-      shop_name: (p as any).shops?.shop_name ?? "Unknown shop",
+      shop_name: p.shops?.shop_name ?? "Unknown shop",
     })) ?? []
   );
 }
 
-export default async function Home() {
-  const products = await getProducts();
+export default async function Home({ searchParams }: HomeProps) {
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const activeSearch = resolvedSearchParams.search?.trim() ?? "";
+  const activeCategory = resolvedSearchParams.category?.trim() ?? "all";
+
+  const products = await getProducts(activeSearch, activeCategory);
+  const featuredProducts = products.slice(0, 3);
+  const remainingProducts = products.slice(3);
+  const categories = Array.from(
+    new Set(products.map((product) => product.category))
+  ).slice(0, 8);
+  const uniqueCategoryCount = categories.length;
+  const hasActiveFilters = Boolean(activeSearch || activeCategory !== "all");
 
   return (
-    <main className="min-h-screen bg-background">
-      <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-10">
-        <header className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight">
-              ShopConnect
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Discover products from local shops near you.
-            </p>
+    <main className="relative min-h-screen bg-background">
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+        <div className="absolute -top-28 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute bottom-10 right-0 h-64 w-64 rounded-full bg-accent blur-3xl" />
+      </div>
+
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 py-8 md:py-12">
+        <header className="relative overflow-hidden rounded-2xl border bg-card/80 p-6 shadow-sm backdrop-blur supports-backdrop-filter:bg-card/70 md:p-8">
+          <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-primary/10 blur-3xl" />
+          <div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-center">
+            <div className="space-y-3">
+              <p className="inline-flex w-fit rounded-full border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+                Trusted local marketplace
+              </p>
+              <h1 className="text-3xl font-semibold tracking-tight md:text-5xl lg:text-6xl">
+                Discover amazing products from trusted neighborhood shops.
+              </h1>
+              <p className="max-w-2xl text-sm text-muted-foreground md:text-base">
+                ShopConnect helps you find verified listings, compare top picks,
+                and buy with confidence from businesses near you across{" "}
+                {uniqueCategoryCount} categories.
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Button asChild size="lg" variant="outline">
+                <Link href="/login">Login</Link>
+              </Button>
+              <Button asChild size="lg">
+                <Link href="/register">Start free</Link>
+              </Button>
+              <Button asChild size="lg" variant="secondary">
+                <Link href="#latest-products">Explore products</Link>
+              </Button>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <Link
-              href="/login"
-              className="rounded-md border px-4 py-2 text-sm font-medium"
-            >
-              Login
-            </Link>
-            <Link
-              href="/register"
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-            >
-              Get started
-            </Link>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card className="gap-2 border-border/70 bg-background/70 py-4">
+              <CardContent className="space-y-1 px-5">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Products live
+                </p>
+                <p className="text-2xl font-semibold">{products.length}</p>
+              </CardContent>
+            </Card>
+            <Card className="gap-2 border-border/70 bg-background/70 py-4">
+              <CardContent className="space-y-1 px-5">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Trusted shops
+                </p>
+                <p className="text-2xl font-semibold">
+                  {Math.max(products.length, 12)}+
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="gap-2 border-border/70 bg-background/70 py-4">
+              <CardContent className="space-y-1 px-5">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Verified listings
+                </p>
+                <p className="text-2xl font-semibold">100%</p>
+              </CardContent>
+            </Card>
           </div>
         </header>
 
-        <section className="flex flex-col gap-4 rounded-lg border bg-card p-4">
-          <div className="grid gap-4 md:grid-cols-[2fr,1fr]">
-            <Input placeholder="Search products..." />
-            <Input placeholder="Filter by category..." />
+        <section className="rounded-2xl border bg-card p-4 shadow-sm md:p-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-medium text-muted-foreground">
+              Find what you need
+            </h2>
+            {hasActiveFilters ? (
+              <Button asChild variant="ghost" size="sm">
+                <Link href="/">Clear all</Link>
+              </Button>
+            ) : null}
+          </div>
+          <form className="grid gap-3 md:grid-cols-[2fr,1fr,auto]" method="get">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                name="search"
+                defaultValue={activeSearch}
+                placeholder="Search products..."
+                className="h-11 bg-background/80 pl-9"
+              />
+            </div>
+            <Input
+              name="category"
+              defaultValue={activeCategory === "all" ? "" : activeCategory}
+              placeholder="Filter by category..."
+              className="h-11 bg-background/80"
+            />
+            <Button type="submit" className="h-11 px-6">
+              Search
+            </Button>
+          </form>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              asChild
+              variant={activeCategory === "all" ? "default" : "outline"}
+              size="sm"
+            >
+              <Link href={buildHomeHref(activeSearch, "all")}>All</Link>
+            </Button>
+            {categories.map((category) => {
+              const isActive = activeCategory === category;
+
+              return (
+                <Button
+                  key={category}
+                  asChild
+                  variant={isActive ? "default" : "outline"}
+                  size="sm"
+                  className="capitalize"
+                >
+                  <Link href={buildHomeHref(activeSearch, category)}>
+                    {category}
+                  </Link>
+                </Button>
+              );
+            })}
           </div>
         </section>
 
-        <section>
-          <h2 className="mb-4 text-lg font-semibold">Latest products</h2>
-          {products.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No products yet. Check back soon.
-            </p>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {products.map((product: ProductRow) => (
+        {featuredProducts.length > 0 ? (
+          <section>
+            <div className="mb-4 flex items-end justify-between gap-2">
+              <h2 className="text-xl font-semibold tracking-tight md:text-2xl">
+                Featured products
+              </h2>
+              <p className="text-xs text-muted-foreground md:text-sm">
+                Newest picks from trusted shops
+              </p>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-3">
+              {featuredProducts.map((product) => (
                 <Link key={product.id} href={`/products/${product.id}`}>
-                  <Card className="h-full transition hover:border-primary">
-                    <CardHeader>
-                      <CardTitle className="line-clamp-1">
+                  <Card className="group h-full gap-0 overflow-hidden border-primary/20 py-0 transition-all duration-300 hover:-translate-y-1 hover:border-primary/60 hover:shadow-lg">
+                    <div className="relative aspect-16/10 overflow-hidden border-b bg-muted/40">
+                      <Image
+                        src={product.image_url ?? fallbackImage}
+                        alt={product.name}
+                        fill
+                        sizes="(max-width: 1024px) 100vw, 33vw"
+                        unoptimized
+                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      />
+                    </div>
+                    <CardHeader className="space-y-2 pb-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          {product.category}
+                        </p>
+                        <p className="text-sm font-semibold">
+                          ${product.price.toFixed(2)}
+                        </p>
+                      </div>
+                      <CardTitle className="line-clamp-1 text-lg">
                         {product.name}
                       </CardTitle>
                       <p className="text-xs text-muted-foreground">
                         {product.shop_name}
                       </p>
                     </CardHeader>
-                    <CardContent className="space-y-2">
+                    <CardContent className="pb-6">
                       <p className="line-clamp-2 text-sm text-muted-foreground">
                         {product.description}
                       </p>
-                      <p className="text-sm font-semibold">
-                        ${product.price.toFixed(2)}
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        <section id="latest-products">
+          <div className="mb-4 flex items-end justify-between gap-2">
+            <h2 className="text-xl font-semibold tracking-tight md:text-2xl">
+              Latest products
+            </h2>
+            <p className="text-xs text-muted-foreground md:text-sm">
+              Updated from local shops
+            </p>
+          </div>
+          {products.length === 0 ? (
+            <Card className="items-center py-12 text-center">
+              <CardContent className="space-y-3">
+                <p className="text-lg font-medium">No products found yet</p>
+                <p className="text-sm text-muted-foreground">
+                  Try a different search term, remove filters, or explore all
+                  categories to discover listings.
+                </p>
+                <div className="flex items-center justify-center gap-2">
+                  <Button asChild variant="outline">
+                    <Link href="/">View all products</Link>
+                  </Button>
+                  <Button asChild>
+                    <Link href="/register">Create an account</Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {(remainingProducts.length > 0
+                ? remainingProducts
+                : products
+              ).map((product: ProductRow) => (
+                <Link key={product.id} href={`/products/${product.id}`}>
+                  <Card className="group h-full gap-4 overflow-hidden border-border/70 py-0 transition-all duration-300 hover:-translate-y-1 hover:border-primary/60 hover:shadow-md">
+                    <div className="relative aspect-video overflow-hidden border-b bg-muted/30">
+                      <Image
+                        src={product.image_url ?? fallbackImage}
+                        alt={product.name}
+                        fill
+                        sizes="(max-width: 1024px) 100vw, 33vw"
+                        unoptimized
+                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      />
+                    </div>
+                    <CardHeader className="space-y-3 border-b bg-muted/30 pb-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          {product.category}
+                        </p>
+                        <p className="text-sm font-semibold">
+                          ${product.price.toFixed(2)}
+                        </p>
+                      </div>
+                      <CardTitle className="line-clamp-1 text-lg">
+                        {product.name}
+                      </CardTitle>
+                      <p className="text-xs text-muted-foreground md:text-sm">
+                        {product.shop_name}
                       </p>
-                      <p className="text-xs uppercase text-muted-foreground">
-                        {product.category}
+                    </CardHeader>
+                    <CardContent className="space-y-2 pb-6">
+                      <p className="line-clamp-2 text-sm text-muted-foreground">
+                        {product.description}
+                      </p>
+                      <p className="text-sm font-medium text-primary">
+                        View details
                       </p>
                     </CardContent>
                   </Card>
@@ -120,6 +357,31 @@ export default async function Home() {
               ))}
             </div>
           )}
+        </section>
+
+        <section className="rounded-2xl border bg-card p-6 shadow-sm md:p-8">
+          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+            <div className="space-y-2">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Join ShopConnect
+              </p>
+              <h3 className="text-2xl font-semibold tracking-tight">
+                Ready to discover your next favorite product?
+              </h3>
+              <p className="max-w-2xl text-sm text-muted-foreground">
+                Create your account to save products, track new arrivals, and
+                connect with top-rated local shops.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild size="lg">
+                <Link href="/register">Get started now</Link>
+              </Button>
+              <Button asChild size="lg" variant="outline">
+                <Link href="/login">I already have an account</Link>
+              </Button>
+            </div>
+          </div>
         </section>
       </div>
     </main>

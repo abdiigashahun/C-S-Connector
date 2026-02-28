@@ -20,9 +20,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const fetchProducts = async () => {
-      const session: any = await authClient.getSession();
+      const session = await authClient.getSession();
       const userId: string | undefined =
-        session?.data?.session?.user?.id ?? session?.user?.id;
+        (session as { data?: { session?: { user?: { id?: string } } } })?.data?.session?.user?.id ??
+        (session as { user?: { id?: string } })?.user?.id;
       if (!userId) {
         setLoading(false);
         return;
@@ -34,12 +35,15 @@ export default function DashboardPage() {
         .eq("shops.owner_id", userId);
 
       setProducts(
-        (data ?? []).map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          price: p.price,
-          category: p.category,
-        })),
+        (data ?? []).map((p: unknown) => {
+          const product = p as Product;
+          return {
+            id: product.id,
+            name: product.name,
+            price: product.price,
+            category: product.category,
+          };
+        }),
       );
       setLoading(false);
     };
