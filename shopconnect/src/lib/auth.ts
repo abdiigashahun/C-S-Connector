@@ -1,12 +1,21 @@
 import { betterAuth } from "better-auth";
 import { Pool } from "pg";
 import dns from "node:dns";
+import { Agent, setGlobalDispatcher } from "undici";
 
 dns.setDefaultResultOrder("ipv4first");
+setGlobalDispatcher(
+  new Agent({
+    connect: {
+      family: 4,
+    },
+  })
+);
 
 const databaseUrl = process.env.DATABASE_URL;
 const googleClientId = process.env.GOOGLE_CLIENT_ID;
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+const betterAuthUrl = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
 
 if (!databaseUrl) {
   // In production you should ensure this is set via env.
@@ -18,6 +27,7 @@ const parsedDatabaseUrl = new URL(databaseUrl);
 const databaseName = parsedDatabaseUrl.pathname.replace(/^\//, "") || "postgres";
 
 export const auth = betterAuth({
+  baseURL: betterAuthUrl,
   database: new Pool({
     host: parsedDatabaseUrl.hostname,
     port: parsedDatabaseUrl.port ? Number(parsedDatabaseUrl.port) : 5432,

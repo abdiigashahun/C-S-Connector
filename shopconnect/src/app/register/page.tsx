@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteNavbar } from "@/components/site-navbar";
+import { getAuthSessionUserId } from "@/lib/auth-session";
 import {
   setPendingRegistration,
   setUserPreferences,
@@ -49,10 +50,7 @@ export default function RegisterPage() {
     }
 
     const session = await authClient.getSession();
-    const userId =
-      (session as { data?: { session?: { user?: { id?: string } } } })?.data
-        ?.session?.user?.id ??
-      (session as { user?: { id?: string } })?.user?.id;
+    const userId = getAuthSessionUserId(session);
 
     if (userId) {
       setUserPreferences(userId, {
@@ -61,7 +59,7 @@ export default function RegisterPage() {
       });
     }
 
-    router.push("/");
+    router.push("/dashboard");
   };
 
   const handleGoogleSignUp = async () => {
@@ -87,7 +85,7 @@ export default function RegisterPage() {
 
     const result = await authClient.signIn.social({
       provider: "google",
-      callbackURL: "/profile",
+      callbackURL: "/dashboard",
     });
 
     if (result?.error) {

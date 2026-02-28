@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "NODE_OPTIONS=--dns-result-order=ipv4first next dev",
+    "build": "NODE_OPTIONS=--dns-result-order=ipv4first next build",
+    "start": "NODE_OPTIONS=--dns-result-order=ipv4first next start",
     "lint": "eslint"
   },
   "dependencies": {
@@ -26,6 +26,7 @@
     "react-dom": "19.2.3",
     "react-hook-form": "^7.71.2",
     "react-leaflet": "^5.0.0",
+    "undici": "^7.16.0",
     "tailwind-merge": "^3.5.0",
     "zod": "^4.3.6"
   },

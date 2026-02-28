@@ -42,7 +42,7 @@
        return;
      }
 
-     router.push("/");
+      router.push("/dashboard");
    };
 
    const handleGoogleLogin = async () => {
@@ -60,7 +60,7 @@
 
      const result = await authClient.signIn.social({
        provider: "google",
-       callbackURL: "/",
+       callbackURL: "/dashboard",
      });
 
      if (result?.error) {
