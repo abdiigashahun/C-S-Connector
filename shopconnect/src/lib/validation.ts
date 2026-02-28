@@ -5,11 +5,17 @@ export const registerSchema = z.object({
   email: z.string().email("Invalid email"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   role: z.enum(["shop_owner", "customer"]),
+  termsAccepted: z.literal(true, {
+    errorMap: () => ({ message: "You must accept the terms to continue" }),
+  }),
 });
 
 export const loginSchema = z.object({
   email: z.string().email("Invalid email"),
   password: z.string().min(6, "Password must be at least 6 characters"),
+  termsAccepted: z.literal(true, {
+    errorMap: () => ({ message: "You must accept the terms to continue" }),
+  }),
 });
 
 export const productSchema = z.object({

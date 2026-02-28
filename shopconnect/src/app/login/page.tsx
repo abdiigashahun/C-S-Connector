@@ -4,6 +4,8 @@
  import { useRouter } from "next/navigation";
  import { useForm } from "react-hook-form";
  import { zodResolver } from "@hookform/resolvers/zod";
+ import Link from "next/link";
+ import { Chrome } from "lucide-react";
  import { loginSchema, type LoginInput } from "@/lib/validation";
  import { authClient } from "@/lib/auth-client";
  import {
@@ -15,6 +17,8 @@
  import { Input } from "@/components/ui/input";
  import { Label } from "@/components/ui/label";
  import { Button } from "@/components/ui/button";
+ import { SiteFooter } from "@/components/site-footer";
+ import { SiteNavbar } from "@/components/site-navbar";
 
  export default function LoginPage() {
    const router = useRouter();
@@ -22,6 +26,8 @@
    const {
      register,
      handleSubmit,
+     getValues,
+     trigger,
      formState: { isSubmitting, errors },
    } = useForm<LoginInput>({
      resolver: zodResolver(loginSchema),
@@ -39,8 +45,33 @@
      router.push("/");
    };
 
+   const handleGoogleLogin = async () => {
+     setError(null);
+
+     const valid = await trigger("termsAccepted");
+     if (!valid) {
+       return;
+     }
+
+     if (!getValues("termsAccepted")) {
+       setError("You must accept the terms to continue");
+       return;
+     }
+
+     const result = await authClient.signIn.social({
+       provider: "google",
+       callbackURL: "/",
+     });
+
+     if (result?.error) {
+       setError(result.error.message ?? "Unable to login with Google");
+     }
+   };
+
    return (
-     <main className="flex min-h-screen items-center justify-center bg-background px-4">
+     <main className="flex min-h-screen flex-col bg-background pt-16">
+       <SiteNavbar />
+       <div className="flex flex-1 items-center justify-center px-4 py-8">
        <Card className="w-full max-w-md">
          <CardHeader>
            <CardTitle className="text-xl">Login to ShopConnect</CardTitle>
@@ -70,13 +101,48 @@
                  </p>
                )}
              </div>
+               <div className="space-y-2">
+                 <label className="flex items-start gap-2 text-sm text-muted-foreground">
+                   <input
+                     type="checkbox"
+                     className="mt-0.5"
+                     {...register("termsAccepted")}
+                   />
+                   <span>
+                     I agree to the app terms and responsible use policy.
+                   </span>
+                 </label>
+                 {errors.termsAccepted && (
+                   <p className="text-xs text-destructive">
+                     {errors.termsAccepted.message}
+                   </p>
+                 )}
+               </div>
              {error && <p className="text-sm text-destructive">{error}</p>}
              <Button type="submit" className="w-full" disabled={isSubmitting}>
                {isSubmitting ? "Logging in..." : "Login"}
              </Button>
+               <Button
+                 type="button"
+                 className="w-full"
+                 variant="outline"
+                 onClick={handleGoogleLogin}
+                 disabled={isSubmitting}
+               >
+                 <Chrome className="mr-2 size-4" />
+                 Continue with Google
+               </Button>
+               <p className="text-center text-xs text-muted-foreground">
+                 Don&apos;t have an account?{" "}
+                 <Link href="/register" className="text-primary hover:underline">
+                   Create one
+                 </Link>
+               </p>
            </form>
          </CardContent>
        </Card>
+       </div>
+       <SiteFooter />
      </main>
    );
  }

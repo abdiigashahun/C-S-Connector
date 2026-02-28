@@ -1,10 +1,11 @@
 import Link from "next/link";
 import Image from "next/image";
+import { Search, ShieldCheck, Sparkles, Store } from "lucide-react";
 import { supabaseServer } from "@/lib/supabase-server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search } from "lucide-react";
+import { SiteFooter } from "@/components/site-footer";
 
 type ProductRow = {
   id: number;
@@ -104,22 +105,68 @@ export default async function Home({ searchParams }: HomeProps) {
   const uniqueCategoryCount = categories.length;
   const hasActiveFilters = Boolean(activeSearch || activeCategory !== "all");
 
+  const trustItems = [
+    {
+      title: "Verified listings",
+      description: "All posts are reviewed for quality and trust.",
+      Icon: ShieldCheck,
+    },
+    {
+      title: "Trusted local shops",
+      description: "Connect with real neighborhood businesses.",
+      Icon: Store,
+    },
+    {
+      title: "Fresh arrivals",
+      description: "New products are added and updated daily.",
+      Icon: Sparkles,
+    },
+  ];
+
   return (
-    <main className="relative min-h-screen bg-background">
+    <main className="relative min-h-screen overflow-x-clip bg-background">
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute -top-28 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
-        <div className="absolute bottom-10 right-0 h-64 w-64 rounded-full bg-accent blur-3xl" />
+        <div className="absolute -top-32 left-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-primary/15 blur-3xl" />
+        <div className="absolute bottom-20 right-0 h-72 w-72 rounded-full bg-accent blur-3xl" />
+        <div className="absolute left-0 top-[35%] h-56 w-56 rounded-full bg-primary/10 blur-3xl" />
       </div>
 
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 py-8 md:py-12">
-        <header className="relative overflow-hidden rounded-2xl border bg-card/80 p-6 shadow-sm backdrop-blur supports-backdrop-filter:bg-card/70 md:p-8">
+      <header className="fixed inset-x-0 top-0 z-30 border-b bg-background/90 backdrop-blur supports-backdrop-filter:bg-background/75">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-3">
+            <Link href="/" className="text-sm font-semibold tracking-wide md:text-base">
+              ShopConnect
+            </Link>
+            <div className="hidden items-center gap-2 md:flex">
+              <Button asChild size="sm" variant="ghost">
+                <Link href="#discover">Discover</Link>
+              </Button>
+              <Button asChild size="sm" variant="ghost">
+                <Link href="#featured">Featured</Link>
+              </Button>
+              <Button asChild size="sm" variant="ghost">
+                <Link href="#latest-products">Products</Link>
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button asChild size="sm" variant="outline">
+                <Link href="/login">Login</Link>
+              </Button>
+              <Button asChild size="sm">
+                <Link href="/register">Get started</Link>
+              </Button>
+            </div>
+        </div>
+      </header>
+
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 pb-8 pt-24 md:pb-12 md:pt-28">
+
+        <section className="relative overflow-hidden rounded-2xl border bg-card/80 p-6 shadow-sm backdrop-blur supports-backdrop-filter:bg-card/70 md:p-8">
           <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-primary/10 blur-3xl" />
-          <div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-center">
+
+          <div className="mb-8 grid gap-6 md:grid-cols-[1.4fr,0.9fr] md:items-center">
             <div className="space-y-3">
-              <p className="inline-flex w-fit rounded-full border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-                Trusted local marketplace
-              </p>
-              <h1 className="text-3xl font-semibold tracking-tight md:text-5xl lg:text-6xl">
+             
+              <h1 className="text-3xl font-semibold leading-tight tracking-tight md:text-5xl lg:text-6xl">
                 Discover amazing products from trusted neighborhood shops.
               </h1>
               <p className="max-w-2xl text-sm text-muted-foreground md:text-base">
@@ -127,51 +174,57 @@ export default async function Home({ searchParams }: HomeProps) {
                 and buy with confidence from businesses near you across{" "}
                 {uniqueCategoryCount} categories.
               </p>
+              <div className="flex flex-wrap gap-2 pt-2">
+                <Button asChild size="lg">
+                  <Link href="#latest-products">Explore products</Link>
+                </Button>
+                <Button asChild size="lg" variant="outline">
+                  <Link href="/register">Start free</Link>
+                </Button>
+              </div>
             </div>
-            <div className="flex shrink-0 flex-wrap gap-2">
-              <Button asChild size="lg" variant="outline">
-                <Link href="/login">Login</Link>
-              </Button>
-              <Button asChild size="lg">
-                <Link href="/register">Start free</Link>
-              </Button>
-              <Button asChild size="lg" variant="secondary">
-                <Link href="#latest-products">Explore products</Link>
-              </Button>
-            </div>
-          </div>
 
-          <div className="grid gap-4 md:grid-cols-3">
-            <Card className="gap-2 border-border/70 bg-background/70 py-4">
-              <CardContent className="space-y-1 px-5">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Products live
+            <Card className="border-border/70 bg-background/70 py-5">
+              <CardHeader className="space-y-2 pb-2">
+                <CardTitle className="text-lg">Why customers choose us</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  One place to discover quality local products, compare value,
+                  and connect with trusted shops fast.
                 </p>
-                <p className="text-2xl font-semibold">{products.length}</p>
-              </CardContent>
-            </Card>
-            <Card className="gap-2 border-border/70 bg-background/70 py-4">
-              <CardContent className="space-y-1 px-5">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Trusted shops
-                </p>
-                <p className="text-2xl font-semibold">
-                  {Math.max(products.length, 12)}+
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="gap-2 border-border/70 bg-background/70 py-4">
-              <CardContent className="space-y-1 px-5">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Verified listings
-                </p>
-                <p className="text-2xl font-semibold">100%</p>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-lg border bg-card p-2">
+                    <p className="text-lg font-semibold">{products.length}</p>
+                    <p className="text-[10px] uppercase text-muted-foreground">Products</p>
+                  </div>
+                  <div className="rounded-lg border bg-card p-2">
+                    <p className="text-lg font-semibold">{Math.max(products.length, 12)}+</p>
+                    <p className="text-[10px] uppercase text-muted-foreground">Shops</p>
+                  </div>
+                  <div className="rounded-lg border bg-card p-2">
+                    <p className="text-lg font-semibold">100%</p>
+                    <p className="text-[10px] uppercase text-muted-foreground">Verified</p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </div>
-        </header>
 
-        <section className="rounded-2xl border bg-card p-4 shadow-sm md:p-6">
+          <div className="grid gap-3 md:grid-cols-3">
+            {trustItems.map(({ title, description, Icon }) => (
+              <Card key={title} className="gap-3 border-border/70 bg-background/70 py-4">
+                <CardContent className="space-y-2 px-5">
+                  <Icon className="size-4 text-primary" />
+                  <p className="text-sm font-semibold">{title}</p>
+                  <p className="text-xs text-muted-foreground">{description}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </section>
+
+        <section id="discover" className="rounded-2xl border bg-card p-4 shadow-sm md:p-6">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-medium text-muted-foreground">
               Find what you need
@@ -182,6 +235,7 @@ export default async function Home({ searchParams }: HomeProps) {
               </Button>
             ) : null}
           </div>
+
           <form className="grid gap-3 md:grid-cols-[2fr,1fr,auto]" method="get">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -232,7 +286,7 @@ export default async function Home({ searchParams }: HomeProps) {
         </section>
 
         {featuredProducts.length > 0 ? (
-          <section>
+          <section id="featured">
             <div className="mb-4 flex items-end justify-between gap-2">
               <h2 className="text-xl font-semibold tracking-tight md:text-2xl">
                 Featured products
@@ -292,6 +346,7 @@ export default async function Home({ searchParams }: HomeProps) {
               Updated from local shops
             </p>
           </div>
+
           {products.length === 0 ? (
             <Card className="items-center py-12 text-center">
               <CardContent className="space-y-3">
@@ -384,7 +439,7 @@ export default async function Home({ searchParams }: HomeProps) {
           </div>
         </section>
       </div>
+      <SiteFooter />
     </main>
   );
 }
-

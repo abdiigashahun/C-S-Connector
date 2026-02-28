@@ -6,6 +6,7 @@ import { authClient } from "@/lib/auth-client";
 import { supabaseBrowser } from "@/lib/supabase-client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { AppRole, getUserPreferences } from "@/lib/user-preferences";
 
 type Product = {
   id: number;
@@ -15,7 +16,9 @@ type Product = {
 };
 
 export default function DashboardPage() {
+  const [role, setRole] = useState<AppRole | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  const [marketProducts, setMarketProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -24,6 +27,14 @@ export default function DashboardPage() {
       const userId: string | undefined =
         (session as { data?: { session?: { user?: { id?: string } } } })?.data?.session?.user?.id ??
         (session as { user?: { id?: string } })?.user?.id;
+
+      if (userId) {
+        const preference = getUserPreferences(userId);
+        if (preference) {
+          setRole(preference.role);
+        }
+      }
+
       if (!userId) {
         setLoading(false);
         return;
@@ -45,6 +56,25 @@ export default function DashboardPage() {
           };
         }),
       );
+
+      const { data: marketData } = await supabaseBrowser
+        .from("products")
+        .select("id,name,price,category")
+        .order("created_at", { ascending: false })
+        .limit(8);
+
+      setMarketProducts(
+        (marketData ?? []).map((p: unknown) => {
+          const product = p as Product;
+          return {
+            id: product.id,
+            name: product.name,
+            price: product.price,
+            category: product.category,
+          };
+        })
+      );
+
       setLoading(false);
     };
 
@@ -57,19 +87,29 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-semibold">Shop dashboard</h1>
           <p className="text-sm text-muted-foreground">
-            Manage your products.
+            {role === "shop_owner"
+              ? "Manage your products and track market listings."
+              : "Browse products and follow shop updates."}
           </p>
         </div>
-        <Button asChild>
-          <Link href="/products/new">Add product</Link>
-        </Button>
+        {role === "shop_owner" ? (
+          <Button asChild>
+            <Link href="/products/new">Add product</Link>
+          </Button>
+        ) : (
+          <Button asChild variant="outline">
+            <Link href="/">Browse marketplace</Link>
+          </Button>
+        )}
       </div>
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading products...</p>
       ) : products.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          You have not posted any products yet.
+          {role === "shop_owner"
+            ? "You have not posted any products yet."
+            : "You can browse listings, compare options, and negotiate with shop owners from product pages."}
         </p>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
@@ -95,6 +135,34 @@ export default function DashboardPage() {
           ))}
         </div>
       )}
+
+      {role === "shop_owner" && marketProducts.length > 0 ? (
+        <section className="mt-8">
+          <div className="mb-3 flex items-end justify-between">
+            <h2 className="text-lg font-semibold">Marketplace feed</h2>
+            <Link href="/" className="text-xs text-primary hover:underline">
+              View all listings
+            </Link>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {marketProducts.map((product) => (
+              <Card key={`market-${product.id}`}>
+                <CardHeader>
+                  <CardTitle className="text-base">{product.name}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <p className="text-sm font-semibold">
+                    ${product.price.toFixed(2)}
+                  </p>
+                  <p className="text-xs uppercase text-muted-foreground">
+                    {product.category}
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </main>
   );
 }

@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import Link from "next/link";
+import { Chrome } from "lucide-react";
 import { registerSchema, type RegisterInput } from "@/lib/validation";
 import { authClient } from "@/lib/auth-client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +13,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SiteFooter } from "@/components/site-footer";
+import { SiteNavbar } from "@/components/site-navbar";
+import {
+  setPendingRegistration,
+  setUserPreferences,
+} from "@/lib/user-preferences";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -19,6 +27,8 @@ export default function RegisterPage() {
     register,
     handleSubmit,
     setValue,
+    getValues,
+    trigger,
     formState: { isSubmitting, errors },
   } = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
@@ -31,18 +41,64 @@ export default function RegisterPage() {
       email: values.email,
       password: values.password,
       name: values.name,
-    } as any);
+    } as never);
 
     if (result.error) {
       setError(result.error.message ?? "Unable to register");
       return;
     }
 
+    const session = await authClient.getSession();
+    const userId =
+      (session as { data?: { session?: { user?: { id?: string } } } })?.data
+        ?.session?.user?.id ??
+      (session as { user?: { id?: string } })?.user?.id;
+
+    if (userId) {
+      setUserPreferences(userId, {
+        role: values.role,
+        termsAcceptedAt: new Date().toISOString(),
+      });
+    }
+
     router.push("/");
   };
 
+  const handleGoogleSignUp = async () => {
+    setError(null);
+
+    const valid = await trigger(["role", "termsAccepted"]);
+    if (!valid) {
+      return;
+    }
+
+    const role = getValues("role");
+    const termsAccepted = getValues("termsAccepted");
+
+    if (!role || !termsAccepted) {
+      setError("Please select your role and accept the terms");
+      return;
+    }
+
+    setPendingRegistration({
+      role,
+      termsAcceptedAt: new Date().toISOString(),
+    });
+
+    const result = await authClient.signIn.social({
+      provider: "google",
+      callbackURL: "/profile",
+    });
+
+    if (result?.error) {
+      setError(result.error.message ?? "Unable to continue with Google");
+    }
+  };
+
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-4">
+    <main className="flex min-h-screen flex-col bg-background pt-16">
+      <SiteNavbar />
+      <div className="flex flex-1 items-center justify-center px-4 py-8">
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-xl">Create your ShopConnect account</CardTitle>
@@ -93,13 +149,49 @@ export default function RegisterPage() {
                 <p className="text-xs text-destructive">{errors.role.message}</p>
               )}
             </div>
+            <div className="space-y-2">
+              <label className="flex items-start gap-2 text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  {...register("termsAccepted")}
+                />
+                <span>
+                  I agree to the app terms, platform policy, and responsible
+                  marketplace use.
+                </span>
+              </label>
+              {errors.termsAccepted && (
+                <p className="text-xs text-destructive">
+                  {errors.termsAccepted.message}
+                </p>
+              )}
+            </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={isSubmitting}>
               {isSubmitting ? "Creating account..." : "Create account"}
             </Button>
+            <Button
+              type="button"
+              className="w-full"
+              variant="outline"
+              onClick={handleGoogleSignUp}
+              disabled={isSubmitting}
+            >
+              <Chrome className="mr-2 size-4" />
+              Sign up with Google
+            </Button>
+            <p className="text-center text-xs text-muted-foreground">
+              Already have an account?{" "}
+              <Link href="/login" className="text-primary hover:underline">
+                Login
+              </Link>
+            </p>
           </form>
         </CardContent>
       </Card>
+      </div>
+      <SiteFooter />
     </main>
   );
 }
