@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SiteFooter } from "@/components/site-footer";
+import { formatETB } from "@/lib/currency";
 
 type ProductRow = {
   id: number;
@@ -15,6 +16,8 @@ type ProductRow = {
   category: string;
   image_url: string | null;
   shop_name: string;
+  owner_email?: string | null;
+  shop_id?: number | null;
 };
 
 type HomeSearchParams = {
@@ -50,11 +53,11 @@ function buildHomeHref(search?: string, category?: string) {
 async function getProducts(search?: string, category?: string) {
   const query = supabaseServer
     .from("products")
-    .select("id,name,description,price,category,image_url,shops(shop_name)")
+    .select("id,name,description,price,category,image_url,shop_id,owner_email")
     .order("created_at", { ascending: false });
 
   if (search) {
-    query.ilike("name", `%${search}%`);
+    query.or(`name.ilike.%${search}%,description.ilike.%${search}%`);
   }
 
   if (category && category !== "all") {
@@ -75,19 +78,70 @@ async function getProducts(search?: string, category?: string) {
     price: number;
     category: string;
     image_url: string | null;
-    shops?: { shop_name: string } | null;
+    shop_id?: number | null;
+    owner_email?: string | null;
   };
 
+  const rows = (data as unknown as ProductQueryRow[]) ?? [];
+
+  const uniqueOwnerRows: ProductQueryRow[] = [];
+  const ownerKeys = new Set<string>();
+  for (const row of rows) {
+    const ownerKey =
+      row.owner_email?.trim().toLowerCase() ||
+      (typeof row.shop_id === "number" ? `shop-${row.shop_id}` : `product-${row.id}`);
+
+    if (ownerKeys.has(ownerKey)) {
+      continue;
+    }
+
+    ownerKeys.add(ownerKey);
+    uniqueOwnerRows.push(row);
+
+    if (uniqueOwnerRows.length >= 6) {
+      break;
+    }
+  }
+
+  const shopIds = Array.from(
+    new Set(
+      uniqueOwnerRows
+        .map((row) => row.shop_id)
+        .filter((shopId): shopId is number => typeof shopId === "number")
+    )
+  );
+
+  const shopNames = new Map<number, string>();
+
+  if (shopIds.length > 0) {
+    const { data: shopData, error: shopError } = await supabaseServer
+      .from("shops")
+      .select("id,shop_name")
+      .in("id", shopIds);
+
+    if (shopError) {
+      console.error(shopError);
+    } else {
+      for (const row of (shopData ?? []) as Array<{ id: number; shop_name: string }>) {
+        shopNames.set(row.id, row.shop_name);
+      }
+    }
+  }
+
   return (
-    (data as unknown as ProductQueryRow[])?.map((p) => ({
+    uniqueOwnerRows.map((p) => ({
       id: p.id,
       name: p.name,
       description: p.description,
       price: p.price,
       category: p.category,
       image_url: p.image_url,
-      shop_name: p.shops?.shop_name ?? "Unknown shop",
-    })) ?? []
+      owner_email: p.owner_email,
+      shop_id: p.shop_id,
+      shop_name:
+        (typeof p.shop_id === "number" ? shopNames.get(p.shop_id) : undefined) ??
+        "Unknown shop",
+    }))
   );
 }
 
@@ -98,7 +152,7 @@ export default async function Home({ searchParams }: HomeProps) {
 
   const products = await getProducts(activeSearch, activeCategory);
   const featuredProducts = products.slice(0, 3);
-  const remainingProducts = products.slice(3);
+  const latestProducts = products.slice(3, 6);
   const categories = Array.from(
     new Set(products.map((product) => product.category))
   ).slice(0, 8);
@@ -297,7 +351,7 @@ export default async function Home({ searchParams }: HomeProps) {
             </div>
             <div className="grid gap-4 lg:grid-cols-3">
               {featuredProducts.map((product) => (
-                <Link key={product.id} href={`/products/${product.id}`}>
+                <Link key={product.id} href={`/login?next=${encodeURIComponent(`/products/${product.id}`)}`}>
                   <Card className="group h-full gap-0 overflow-hidden border-primary/20 py-0 transition-all duration-300 hover:-translate-y-1 hover:border-primary/60 hover:shadow-lg">
                     <div className="relative aspect-16/10 overflow-hidden border-b bg-muted/40">
                       <Image
@@ -315,7 +369,7 @@ export default async function Home({ searchParams }: HomeProps) {
                           {product.category}
                         </p>
                         <p className="text-sm font-semibold">
-                          ${product.price.toFixed(2)}
+                          {formatETB(product.price)}
                         </p>
                       </div>
                       <CardTitle className="line-clamp-1 text-lg">
@@ -347,7 +401,7 @@ export default async function Home({ searchParams }: HomeProps) {
             </p>
           </div>
 
-          {products.length === 0 ? (
+          {latestProducts.length === 0 ? (
             <Card className="items-center py-12 text-center">
               <CardContent className="space-y-3">
                 <p className="text-lg font-medium">No products found yet</p>
@@ -367,11 +421,8 @@ export default async function Home({ searchParams }: HomeProps) {
             </Card>
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {(remainingProducts.length > 0
-                ? remainingProducts
-                : products
-              ).map((product: ProductRow) => (
-                <Link key={product.id} href={`/products/${product.id}`}>
+              {latestProducts.map((product: ProductRow) => (
+                <Link key={product.id} href={`/login?next=${encodeURIComponent(`/products/${product.id}`)}`}>
                   <Card className="group h-full gap-4 overflow-hidden border-border/70 py-0 transition-all duration-300 hover:-translate-y-1 hover:border-primary/60 hover:shadow-md">
                     <div className="relative aspect-video overflow-hidden border-b bg-muted/30">
                       <Image
@@ -389,7 +440,7 @@ export default async function Home({ searchParams }: HomeProps) {
                           {product.category}
                         </p>
                         <p className="text-sm font-semibold">
-                          ${product.price.toFixed(2)}
+                          {formatETB(product.price)}
                         </p>
                       </div>
                       <CardTitle className="line-clamp-1 text-lg">

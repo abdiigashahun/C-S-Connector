@@ -51,6 +51,7 @@ import {
   getProfileSettingsByEmail,
   saveProfileSettingsByEmail,
 } from "@/lib/profile-settings";
+import { formatETB } from "@/lib/currency";
 
 type Product = {
   id: number;
@@ -152,6 +153,9 @@ export default function CustomerDashboardPage() {
   const [notifyPush, setNotifyPush] = useState(true);
   const [showPhoneNumber, setShowPhoneNumber] = useState(false);
   const [profileSaveMessage, setProfileSaveMessage] = useState<string | null>(null);
+  const [productLikes, setProductLikes] = useState<Record<number, number>>({});
+  const [likedProducts, setLikedProducts] = useState<Record<number, boolean>>({});
+  const [likingProductId, setLikingProductId] = useState<number | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -333,6 +337,109 @@ export default function CustomerDashboardPage() {
     selectedSort,
   ]);
 
+  useEffect(() => {
+    const loadLikeState = async () => {
+      if (recommendedProducts.length === 0) {
+        return;
+      }
+
+      const results = await Promise.all(
+        recommendedProducts.slice(0, 12).map(async (product) => {
+          const response = await fetch(`/api/products/${product.id}/interactions`);
+          if (!response.ok) {
+            return null;
+          }
+
+          const payload = (await response.json().catch(() => null)) as
+            | { data?: { likes?: number; liked?: boolean } }
+            | null;
+
+          return {
+            productId: product.id,
+            likes: payload?.data?.likes ?? 0,
+            liked: payload?.data?.liked ?? false,
+          };
+        })
+      );
+
+      const nextLikes: Record<number, number> = {};
+      const nextLiked: Record<number, boolean> = {};
+
+      for (const item of results) {
+        if (!item) {
+          continue;
+        }
+
+        nextLikes[item.productId] = item.likes;
+        nextLiked[item.productId] = item.liked;
+      }
+
+      setProductLikes((current) => ({ ...current, ...nextLikes }));
+      setLikedProducts((current) => ({ ...current, ...nextLiked }));
+    };
+
+    void loadLikeState();
+  }, [recommendedProducts]);
+
+  const handleToggleLike = async (productId: number) => {
+    setLikingProductId(productId);
+
+    const previousLiked = likedProducts[productId] ?? false;
+    const previousLikes = productLikes[productId] ?? 0;
+    const optimisticLiked = !previousLiked;
+    const optimisticLikes = Math.max(0, previousLikes + (optimisticLiked ? 1 : -1));
+
+    setLikedProducts((current) => ({
+      ...current,
+      [productId]: optimisticLiked,
+    }));
+    setProductLikes((current) => ({
+      ...current,
+      [productId]: optimisticLikes,
+    }));
+
+    const response = await fetch(`/api/products/${productId}/interactions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ action: "toggle_like" }),
+    });
+
+    if (!response.ok) {
+      setLikedProducts((current) => ({
+        ...current,
+        [productId]: previousLiked,
+      }));
+      setProductLikes((current) => ({
+        ...current,
+        [productId]: previousLikes,
+      }));
+      setLikingProductId(null);
+      return;
+    }
+
+    const payload = (await response.json().catch(() => null)) as
+      | { data?: { likes?: number; liked?: boolean } }
+      | null;
+
+    if (typeof payload?.data?.likes === "number") {
+      setProductLikes((current) => ({
+        ...current,
+        [productId]: payload.data?.likes ?? optimisticLikes,
+      }));
+    }
+
+    if (typeof payload?.data?.liked === "boolean") {
+      setLikedProducts((current) => ({
+        ...current,
+        [productId]: payload.data?.liked ?? optimisticLiked,
+      }));
+    }
+
+    setLikingProductId(null);
+  };
+
   return (
     <main className="relative mx-auto min-h-screen max-w-6xl px-4 pt-24 pb-8">
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
@@ -358,7 +465,7 @@ export default function CustomerDashboardPage() {
                 </SheetTrigger>
                 <SheetContent side="left" className="p-0">
                   <SheetHeader className="border-b px-5 py-4">
-                    <SheetTitle>Customer Menu</SheetTitle>
+                    <SheetTitle> Menu</SheetTitle>
                     <SheetDescription>
                       Quick links for your dashboard and account.
                     </SheetDescription>
@@ -367,7 +474,7 @@ export default function CustomerDashboardPage() {
                   <div className="space-y-2 p-4">
                     <SheetClose asChild>
                       <Button asChild variant="outline" className="w-full justify-start">
-                        <Link href="/dashboard/customer">Dashboard Home</Link>
+                        <Link href="/dashboard/customer">Dashboard </Link>
                       </Button>
                     </SheetClose>
                     <SheetClose asChild>
@@ -500,13 +607,7 @@ export default function CustomerDashboardPage() {
         </div>
       </header>
 
-      <Card className="mb-6 border-primary/30 bg-linear-to-r from-primary/15 via-primary/5 to-transparent py-3">
-        <CardContent className="px-5">
-          <p className="inline-flex items-center gap-2 text-sm font-medium">
-            <Sparkles className="size-4 text-primary" /> You are Customer
-          </p>
-        </CardContent>
-      </Card>
+     
 
       <section className="mb-8 rounded-2xl border bg-card/95 p-6 shadow-sm">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -689,7 +790,7 @@ export default function CustomerDashboardPage() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold">${product.price.toFixed(2)}</p>
+                      <p className="text-sm font-semibold">{formatETB(product.price)}</p>
                       <p className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                         <Star className="size-3 fill-current" /> {rating}
                       </p>
@@ -698,8 +799,15 @@ export default function CustomerDashboardPage() {
                       <Button asChild size="sm" variant="outline" className="flex-1">
                         <Link href={`/products/${product.id}`}>View details</Link>
                       </Button>
-                      <Button size="sm" className="flex-1">
-                        <Heart className="mr-1 size-3" /> Wishlist
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        variant={likedProducts[product.id] ? "default" : "outline"}
+                        onClick={() => void handleToggleLike(product.id)}
+                        disabled={likingProductId === product.id}
+                      >
+                        <Heart className="mr-1 size-3" />
+                        {productLikes[product.id] ?? 0} Like
                       </Button>
                     </div>
                   </CardContent>
@@ -743,7 +851,7 @@ export default function CustomerDashboardPage() {
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{item.name}</p>
                   <p className="text-xs text-muted-foreground">{item.shopName}</p>
-                  <p className="text-xs font-semibold">${item.price.toFixed(2)}</p>
+                  <p className="text-xs font-semibold">{formatETB(item.price)}</p>
                 </div>
                 <Button size="sm" variant="ghost">
                   <Heart className="mr-1 size-3 fill-current" /> Remove

@@ -249,10 +249,8 @@ export default function AdminOwnersPage() {
     <main className="mx-auto min-h-screen max-w-5xl px-4 py-8">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Admin Controls</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage shop owner access and payment status.
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight">Admin Dashboard</h1>
+          
         </div>
         <Button variant="outline" onClick={() => router.push("/dashboard")}>Back</Button>
       </header>

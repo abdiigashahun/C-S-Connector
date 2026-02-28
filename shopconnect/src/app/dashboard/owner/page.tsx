@@ -8,7 +8,6 @@ import {
   ArrowDown,
   ArrowUp,
   BarChart3,
-  DollarSign,
   Eye,
   Filter,
   ImagePlus,
@@ -62,6 +61,7 @@ import {
   getProfileSettingsByEmail,
   saveProfileSettingsByEmail,
 } from "@/lib/profile-settings";
+import { formatETB } from "@/lib/currency";
 
 type MarketProduct = {
   id: number;
@@ -71,6 +71,7 @@ type MarketProduct = {
   image_url?: string | null;
   owner_email?: string | null;
   created_at?: string | null;
+  description?: string | null;
 };
 
 type OwnerProduct = {
@@ -146,6 +147,7 @@ export default function OwnerDashboardPage() {
 
   const [userInitial, setUserInitial] = useState("O");
   const [userName, setUserName] = useState("Owner");
+  const [shopName, setShopName] = useState("My Shop");
   const [userEmail, setUserEmail] = useState("owner@example.com");
   const [phone, setPhone] = useState("+251 9XX XXX XXX");
   const [preferredLocation, setPreferredLocation] = useState("Addis Ababa");
@@ -219,6 +221,16 @@ export default function OwnerDashboardPage() {
           setNotifyEmail(savedProfile.notifyEmail);
           setNotifyPush(savedProfile.notifyPush);
         }
+
+        const shopResponse = await fetch("/api/owner-shop-profile");
+        if (shopResponse.ok) {
+          const shopPayload = (await shopResponse.json().catch(() => null)) as
+            | { data?: { shopName?: string } }
+            | null;
+          if (shopPayload?.data?.shopName) {
+            setShopName(shopPayload.data.shopName);
+          }
+        }
       }
 
       const acceptedAt = new Date().toISOString();
@@ -237,9 +249,19 @@ export default function OwnerDashboardPage() {
 
       const { data: ownData } = await supabaseBrowser
         .from("products")
-        .select("id,name,price,category,image_url,owner_email,created_at")
+        .select("id,name,description,price,category,image_url,owner_email,created_at")
         .eq("owner_email", sessionEmail)
         .order("created_at", { ascending: false });
+
+      const metricsResponse = await fetch("/api/owner-products/metrics");
+      const metricsPayload = (await metricsResponse.json().catch(() => null)) as
+        | { data?: Array<{ productId: number; views: number; likes: number }> }
+        | null;
+
+      const metricMap = new Map<number, { views: number; likes: number }>();
+      for (const row of metricsPayload?.data ?? []) {
+        metricMap.set(row.productId, { views: row.views, likes: row.likes });
+      }
 
       setProducts(
         (ownData ?? []).map((item: unknown, index: number) => {
@@ -253,7 +275,9 @@ export default function OwnerDashboardPage() {
           return {
             id: product.id,
             name: product.name,
-            description: `High-quality ${product.name.toLowerCase()} with trusted local delivery and fast support.`,
+            description:
+              product.description?.trim() ||
+              `High-quality ${product.name.toLowerCase()} with trusted local delivery and fast support.`,
             price: product.price,
             category: product.category,
             image_url: product.image_url ?? null,
@@ -265,9 +289,9 @@ export default function OwnerDashboardPage() {
             createdAt: createdDate.toISOString(),
             ageDays: daysAgo,
             status: index % 5 === 0 ? "pending" : "active",
-            views: 180 + index * 23,
-            likes: 25 + index * 4,
-            sales: 6 + index * 2,
+            views: metricMap.get(product.id)?.views ?? 0,
+            likes: metricMap.get(product.id)?.likes ?? 0,
+            sales: 0,
           };
         })
       );
@@ -325,6 +349,25 @@ export default function OwnerDashboardPage() {
       return;
     }
 
+    const shopResponse = await fetch("/api/owner-shop-profile", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        shopName: shopName.trim(),
+        phone: phone.trim(),
+      }),
+    });
+
+    if (!shopResponse.ok) {
+      const payload = (await shopResponse.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+      setProfileSaveMessage(payload?.error ?? "Unable to save shop name right now.");
+      return;
+    }
+
     setUserInitial(userName.slice(0, 1).toUpperCase() || "O");
     setProfileSaveMessage("Profile changes saved.");
   };
@@ -360,7 +403,6 @@ export default function OwnerDashboardPage() {
     const totalViews = products.reduce((sum, product) => sum + product.views, 0);
     const totalLikes = products.reduce((sum, product) => sum + product.likes, 0);
     const totalSales = products.reduce((sum, product) => sum + product.sales, 0);
-    const revenue = products.reduce((sum, product) => sum + product.sales * product.price, 0);
     const pendingApprovals = products.filter((product) => product.status === "pending").length;
 
     return {
@@ -368,7 +410,6 @@ export default function OwnerDashboardPage() {
       totalViews,
       totalLikes,
       totalSales,
-      revenue,
       pendingApprovals,
     };
   }, [products]);
@@ -655,6 +696,10 @@ export default function OwnerDashboardPage() {
     });
   };
 
+  const openProductDetails = (productId: number) => {
+    router.push(`/products/${productId}`);
+  };
+
   return (
     <main className="relative mx-auto min-h-screen max-w-6xl px-4 pt-24 pb-10">
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
@@ -706,7 +751,7 @@ export default function OwnerDashboardPage() {
 
                 <div>
                   
-                  <p className="text-sm font-semibold">Owner Dashboard</p>
+                  <p className="text-sm font-semibold"> Dashboard</p>
                 </div>
               </div>
 
@@ -734,7 +779,7 @@ export default function OwnerDashboardPage() {
                         </Avatar>
                         <div>
                           <SheetTitle>Account & Profile</SheetTitle>
-                          <SheetDescription>{userEmail}</SheetDescription>
+                          <SheetDescription>{shopName}</SheetDescription>
                         </div>
                       </div>
                     </SheetHeader>
@@ -746,6 +791,15 @@ export default function OwnerDashboardPage() {
                           id="owner-name"
                           value={userName}
                           onChange={(event) => setUserName(event.target.value)}
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="shop-name">Shop name</Label>
+                        <Input
+                          id="shop-name"
+                          value={shopName}
+                          onChange={(event) => setShopName(event.target.value)}
                         />
                       </div>
 
@@ -818,15 +872,8 @@ export default function OwnerDashboardPage() {
         </div>
       </header>
 
-      <Card className="mb-6 border-primary/30 bg-linear-to-r from-primary/15 via-primary/5 to-transparent py-3">
-        <CardContent className="px-5">
-          <p className="inline-flex items-center gap-2 text-sm font-medium">
-            <Sparkles className="size-4 text-primary" /> You are Owner
-          </p>
-        </CardContent>
-      </Card>
 
-      <section className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Card className="transition hover:shadow-md">
           <CardContent className="flex items-center justify-between px-5 py-5">
             <div>
@@ -834,15 +881,6 @@ export default function OwnerDashboardPage() {
               <p className="text-2xl font-semibold">{analytics.totalProducts}</p>
             </div>
             <Package className="size-5 text-primary" />
-          </CardContent>
-        </Card>
-        <Card className="transition hover:shadow-md">
-          <CardContent className="flex items-center justify-between px-5 py-5">
-            <div>
-              <p className="text-xs uppercase text-muted-foreground">Revenue</p>
-              <p className="text-2xl font-semibold">${analytics.revenue.toFixed(0)}</p>
-            </div>
-            <DollarSign className="size-5 text-primary" />
           </CardContent>
         </Card>
         <Card className="transition hover:shadow-md">
@@ -1246,7 +1284,12 @@ export default function OwnerDashboardPage() {
           <div className="grid gap-4 md:grid-cols-2">
             {filteredProducts.map((product) => (
               <Card key={product.id} className="group overflow-hidden border-border/70 py-0 transition hover:shadow-md">
-                <div className="relative aspect-video border-b bg-muted/30">
+                <button
+                  type="button"
+                  className="relative block aspect-video w-full border-b bg-muted/30"
+                  onClick={() => openProductDetails(product.id)}
+                  aria-label={`View details for ${product.name}`}
+                >
                   <Image
                     src={product.image_url ?? dummyImage}
                     alt={product.name}
@@ -1255,11 +1298,17 @@ export default function OwnerDashboardPage() {
                     unoptimized
                     className="object-cover transition-transform duration-300 group-hover:scale-105"
                   />
-                </div>
+                </button>
                 <CardHeader>
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <CardTitle className="text-base">{product.name}</CardTitle>
+                      <button
+                        type="button"
+                        className="text-left"
+                        onClick={() => openProductDetails(product.id)}
+                      >
+                        <CardTitle className="text-base">{product.name}</CardTitle>
+                      </button>
                       <p className="line-clamp-2 text-xs text-muted-foreground">{product.description}</p>
                     </div>
                     <span className="rounded-full border px-2 py-0.5 text-[11px] uppercase text-muted-foreground">
@@ -1270,7 +1319,7 @@ export default function OwnerDashboardPage() {
                 <CardContent className="space-y-3">
                   <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                     <span className="rounded-md border px-2 py-1">{product.category}</span>
-                    <span className="rounded-md border px-2 py-1">${product.price.toFixed(2)}</span>
+                    <span className="rounded-md border px-2 py-1">{formatETB(product.price)}</span>
                     <span className="rounded-md border px-2 py-1">{new Date(product.createdAt).toLocaleDateString()}</span>
                   </div>
 
@@ -1381,7 +1430,12 @@ export default function OwnerDashboardPage() {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {marketProducts.map((product) => (
               <Card key={`market-${product.id}`} className="overflow-hidden py-0">
-                <div className="relative aspect-video border-b bg-muted/30">
+                <button
+                  type="button"
+                  className="relative block aspect-video w-full border-b bg-muted/30"
+                  onClick={() => openProductDetails(product.id)}
+                  aria-label={`View details for ${product.name}`}
+                >
                   <Image
                     src={product.image_url ?? dummyImage}
                     alt={product.name}
@@ -1390,13 +1444,28 @@ export default function OwnerDashboardPage() {
                     unoptimized
                     className="object-cover"
                   />
-                </div>
+                </button>
                 <CardHeader>
-                  <CardTitle className="line-clamp-1 text-base">{product.name}</CardTitle>
+                  <button
+                    type="button"
+                    className="text-left"
+                    onClick={() => openProductDetails(product.id)}
+                  >
+                    <CardTitle className="line-clamp-1 text-base">{product.name}</CardTitle>
+                  </button>
                 </CardHeader>
                 <CardContent className="space-y-1 pb-4">
-                  <p className="text-sm font-semibold">${product.price.toFixed(2)}</p>
+                  <p className="text-sm font-semibold">{formatETB(product.price)}</p>
                   <p className="text-xs uppercase text-muted-foreground">{product.category}</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-2 w-full"
+                    onClick={() => openProductDetails(product.id)}
+                  >
+                    <Eye className="mr-1 size-3" /> View details
+                  </Button>
                 </CardContent>
               </Card>
             ))}

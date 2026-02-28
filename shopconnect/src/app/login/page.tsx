@@ -1,7 +1,7 @@
- "use client";
+"use client";
 
- import { useState } from "react";
- import { useRouter } from "next/navigation";
+ import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
  import { useForm } from "react-hook-form";
  import { zodResolver } from "@hookform/resolvers/zod";
  import Link from "next/link";
@@ -22,6 +22,7 @@
 
  export default function LoginPage() {
    const router = useRouter();
+  const searchParams = useSearchParams();
    const [error, setError] = useState<string | null>(null);
    const {
      register,
@@ -33,6 +34,26 @@
      resolver: zodResolver(loginSchema),
    });
 
+  useEffect(() => {
+    const redirectIfLoggedIn = async () => {
+      const session = await authClient.getSession();
+      const email =
+        (session as { data?: { user?: { email?: string } } })?.data?.user?.email ??
+        (session as { data?: { session?: { user?: { email?: string } } } })?.data?.session?.user?.email ??
+        (session as { user?: { email?: string } })?.user?.email;
+
+      if (!email) {
+        return;
+      }
+
+      const next = searchParams.get("next") ?? "";
+      const safeNext = next.startsWith("/") ? next : "/dashboard";
+      router.replace(safeNext);
+    };
+
+    void redirectIfLoggedIn();
+  }, [router, searchParams]);
+
    const onSubmit = async (values: LoginInput) => {
      setError(null);
      const result = await authClient.signIn.email(values);
@@ -42,7 +63,9 @@
        return;
      }
 
-      router.push("/dashboard");
+      const next = searchParams.get("next") ?? "";
+      const safeNext = next.startsWith("/") ? next : "/dashboard";
+      router.push(safeNext);
    };
 
    const handleGoogleLogin = async () => {
@@ -58,9 +81,12 @@
        return;
      }
 
+     const next = searchParams.get("next") ?? "";
+     const safeNext = next.startsWith("/") ? next : "/dashboard";
+
      const result = await authClient.signIn.social({
        provider: "google",
-       callbackURL: "/dashboard",
+       callbackURL: safeNext,
      });
 
      if (result?.error) {
