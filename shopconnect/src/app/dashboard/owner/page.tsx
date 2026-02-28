@@ -52,11 +52,16 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import {
-  consumePendingRegistration,
-  getUserPreferences,
+  setUserRoleByEmail,
   setUserPreferences,
 } from "@/lib/user-preferences";
-import { getAuthSessionUserId } from "@/lib/auth-session";
+import { getAuthSessionUser } from "@/lib/auth-session";
+import { isAdminEmail } from "@/lib/admin";
+import { isOwnerEmail } from "@/lib/owner-access";
+import {
+  getProfileSettingsByEmail,
+  saveProfileSettingsByEmail,
+} from "@/lib/profile-settings";
 
 type MarketProduct = {
   id: number;
@@ -143,6 +148,7 @@ export default function OwnerDashboardPage() {
   const [shopAddress, setShopAddress] = useState("Bole, Addis Ababa");
   const [notifyEmail, setNotifyEmail] = useState(true);
   const [notifyPush, setNotifyPush] = useState(true);
+  const [profileSaveMessage, setProfileSaveMessage] = useState<string | null>(null);
 
   const [searchText, setSearchText] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -155,7 +161,8 @@ export default function OwnerDashboardPage() {
   useEffect(() => {
     const load = async () => {
       const session = await authClient.getSession();
-      const userId = getAuthSessionUserId(session);
+      const sessionUser = getAuthSessionUser(session);
+      const userId = sessionUser?.id;
       const sessionUserName =
         (session as { data?: { user?: { name?: string } } })?.data?.user?.name ??
         (session as { data?: { session?: { user?: { name?: string } } } })?.data?.session?.user?.name ??
@@ -171,6 +178,11 @@ export default function OwnerDashboardPage() {
       setUserEmail(sessionEmail);
       setUserInitial(sessionUserName.slice(0, 1).toUpperCase());
 
+      if (isAdminEmail(sessionEmail)) {
+        router.replace("/dashboard/admin");
+        return;
+      }
+
       if (!userId) {
         router.replace("/login");
         return;
@@ -178,17 +190,37 @@ export default function OwnerDashboardPage() {
 
       setOwnerUserId(userId);
 
-      const existingPreference = getUserPreferences(userId);
-      const pendingPreference = existingPreference ? null : consumePendingRegistration();
-      const preference = existingPreference ?? pendingPreference;
-
-      if (pendingPreference) {
-        setUserPreferences(userId, pendingPreference);
-      }
-
-      if (preference?.role !== "shop_owner") {
+      const isOwner = await isOwnerEmail(sessionEmail);
+      if (!isOwner) {
         router.replace("/dashboard/customer");
         return;
+      }
+
+      if (sessionEmail) {
+        const savedProfile = await getProfileSettingsByEmail(sessionEmail);
+        if (savedProfile) {
+          setUserName(savedProfile.name || sessionUserName);
+          setUserInitial((savedProfile.name || sessionUserName).slice(0, 1).toUpperCase() || "O");
+          setPhone(savedProfile.phone || "+251 9XX XXX XXX");
+          setPreferredLocation(savedProfile.preferredLocation || "Addis Ababa");
+          setShopAddress(savedProfile.address || "Bole, Addis Ababa");
+          setNotifyEmail(savedProfile.notifyEmail);
+          setNotifyPush(savedProfile.notifyPush);
+        }
+      }
+
+      const acceptedAt = new Date().toISOString();
+      setUserPreferences(userId, {
+        role: "shop_owner",
+        termsAcceptedAt: acceptedAt,
+      });
+      if (sessionEmail) {
+        await setUserRoleByEmail({
+          email: sessionEmail,
+          role: "shop_owner",
+          termsAcceptedAt: acceptedAt,
+          userId,
+        });
       }
 
       const { data: ownData } = await supabaseBrowser
@@ -253,6 +285,33 @@ export default function OwnerDashboardPage() {
   const handleLogout = async () => {
     await authClient.signOut();
     router.replace("/login");
+  };
+
+  const handleSaveProfileChanges = async () => {
+    if (!userEmail) {
+      setProfileSaveMessage("Unable to save profile right now.");
+      return;
+    }
+
+    const saved = await saveProfileSettingsByEmail({
+      email: userEmail,
+      role: "shop_owner",
+      name: userName,
+      phone,
+      preferredLocation,
+      address: shopAddress,
+      notifyEmail,
+      notifyPush,
+      showPhone: true,
+    });
+
+    if (!saved) {
+      setProfileSaveMessage("Unable to save profile right now.");
+      return;
+    }
+
+    setUserInitial(userName.slice(0, 1).toUpperCase() || "O");
+    setProfileSaveMessage("Profile changes saved.");
   };
 
   const filteredProducts = useMemo(() => {
@@ -452,6 +511,11 @@ export default function OwnerDashboardPage() {
                           <Link href="/profile">Profile</Link>
                         </Button>
                       </SheetClose>
+                      <SheetClose asChild>
+                        <Button asChild variant="outline" className="w-full justify-start">
+                          <Link href="/dashboard/admin">Admin controls</Link>
+                        </Button>
+                      </SheetClose>
                     </div>
                   </SheetContent>
                 </Sheet>
@@ -554,7 +618,12 @@ export default function OwnerDashboardPage() {
                       </div>
 
                       <div className="pt-1">
-                        <Button className="w-full">Save profile changes</Button>
+                        <Button className="w-full" onClick={handleSaveProfileChanges}>
+                          Save profile changes
+                        </Button>
+                        {profileSaveMessage ? (
+                          <p className="mt-2 text-xs text-muted-foreground">{profileSaveMessage}</p>
+                        ) : null}
                       </div>
                     </div>
                   </SheetContent>

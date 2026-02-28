@@ -41,11 +41,16 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import {
-  consumePendingRegistration,
-  getUserPreferences,
+  setUserRoleByEmail,
   setUserPreferences,
 } from "@/lib/user-preferences";
 import { getAuthSessionUser } from "@/lib/auth-session";
+import { isAdminEmail } from "@/lib/admin";
+import { isOwnerEmail } from "@/lib/owner-access";
+import {
+  getProfileSettingsByEmail,
+  saveProfileSettingsByEmail,
+} from "@/lib/profile-settings";
 
 type Product = {
   id: number;
@@ -145,14 +150,15 @@ export default function CustomerDashboardPage() {
   const [savedAddress, setSavedAddress] = useState("Bole, Addis Ababa");
   const [notifyEmail, setNotifyEmail] = useState(true);
   const [notifyPush, setNotifyPush] = useState(true);
+  const [showPhoneNumber, setShowPhoneNumber] = useState(false);
+  const [profileSaveMessage, setProfileSaveMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
       const session = await authClient.getSession();
       const user = getAuthSessionUser(session);
 
-      const userId = user?.id;
-      if (!userId) {
+      if (!user?.id) {
         router.replace("/login");
         return;
       }
@@ -164,17 +170,42 @@ export default function CustomerDashboardPage() {
         setUserEmail(user.email);
       }
 
-      const existingPreference = getUserPreferences(userId);
-      const pendingPreference = existingPreference ? null : consumePendingRegistration();
-      const preference = existingPreference ?? pendingPreference;
-
-      if (pendingPreference) {
-        setUserPreferences(userId, pendingPreference);
+      if (isAdminEmail(user?.email)) {
+        router.replace("/dashboard/admin");
+        return;
       }
 
-      if (preference?.role === "shop_owner") {
+      const isOwner = await isOwnerEmail(user?.email);
+      if (isOwner) {
         router.replace("/dashboard/owner");
         return;
+      }
+
+      if (user?.email) {
+        const savedProfile = await getProfileSettingsByEmail(user.email);
+        if (savedProfile) {
+          setUserName(savedProfile.name || user.name || "Customer");
+          setPhone(savedProfile.phone || "+251 9XX XXX XXX");
+          setPreferredLocation(savedProfile.preferredLocation || "Addis Ababa");
+          setSavedAddress(savedProfile.address || "Bole, Addis Ababa");
+          setNotifyEmail(savedProfile.notifyEmail);
+          setNotifyPush(savedProfile.notifyPush);
+          setShowPhoneNumber(savedProfile.showPhone);
+        }
+      }
+
+      if (user?.email) {
+        const acceptedAt = new Date().toISOString();
+        setUserPreferences(user.id, {
+          role: "customer",
+          termsAcceptedAt: acceptedAt,
+        });
+        await setUserRoleByEmail({
+          email: user.email,
+          role: "customer",
+          termsAcceptedAt: acceptedAt,
+          userId: user.id,
+        });
       }
 
       const { data } = await supabaseBrowser
@@ -206,6 +237,32 @@ export default function CustomerDashboardPage() {
   const handleLogout = async () => {
     await authClient.signOut();
     router.replace("/login");
+  };
+
+  const handleSaveProfileChanges = async () => {
+    if (!userEmail) {
+      setProfileSaveMessage("Unable to save profile right now.");
+      return;
+    }
+
+    const saved = await saveProfileSettingsByEmail({
+      email: userEmail,
+      role: "customer",
+      name: userName,
+      phone,
+      preferredLocation,
+      address: savedAddress,
+      notifyEmail,
+      notifyPush,
+      showPhone: showPhoneNumber,
+    });
+
+    if (!saved) {
+      setProfileSaveMessage("Unable to save profile right now.");
+      return;
+    }
+
+    setProfileSaveMessage("Profile changes saved.");
   };
 
   const mergedProducts = useMemo(() => {
@@ -407,6 +464,14 @@ export default function CustomerDashboardPage() {
                           />
                           Push notifications
                         </label>
+                        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <input
+                            type="checkbox"
+                            checked={showPhoneNumber}
+                            onChange={(event) => setShowPhoneNumber(event.target.checked)}
+                          />
+                          Show my phone number on my customer profile
+                        </label>
                       </div>
 
                       <div className="space-y-2 md:col-span-2">
@@ -419,7 +484,12 @@ export default function CustomerDashboardPage() {
                     </div>
 
                     <div className="pt-1">
-                      <Button className="w-full">Save profile changes</Button>
+                      <Button className="w-full" onClick={handleSaveProfileChanges}>
+                        Save profile changes
+                      </Button>
+                      {profileSaveMessage ? (
+                        <p className="mt-2 text-xs text-muted-foreground">{profileSaveMessage}</p>
+                      ) : null}
                     </div>
                   </div>
                 </SheetContent>

@@ -12,12 +12,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteNavbar } from "@/components/site-navbar";
-import { getAuthSessionUserId } from "@/lib/auth-session";
+import { getAuthSessionUser } from "@/lib/auth-session";
 import {
   setPendingRegistration,
+  setUserRoleByEmail,
   setUserPreferences,
 } from "@/lib/user-preferences";
 
@@ -27,12 +27,14 @@ export default function RegisterPage() {
   const {
     register,
     handleSubmit,
-    setValue,
     getValues,
     trigger,
     formState: { isSubmitting, errors },
   } = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
+    defaultValues: {
+      role: "customer",
+    },
   });
 
   const onSubmit = async (values: RegisterInput) => {
@@ -50,12 +52,24 @@ export default function RegisterPage() {
     }
 
     const session = await authClient.getSession();
-    const userId = getAuthSessionUserId(session);
+    const sessionUser = getAuthSessionUser(session);
+    const userId = sessionUser?.id;
+    const userEmail = sessionUser?.email ?? values.email;
+    const acceptedAt = new Date().toISOString();
 
     if (userId) {
       setUserPreferences(userId, {
-        role: values.role,
-        termsAcceptedAt: new Date().toISOString(),
+        role: "customer",
+        termsAcceptedAt: acceptedAt,
+      });
+    }
+
+    if (userEmail) {
+      await setUserRoleByEmail({
+        email: userEmail,
+        role: "customer",
+        termsAcceptedAt: acceptedAt,
+        userId,
       });
     }
 
@@ -65,16 +79,16 @@ export default function RegisterPage() {
   const handleGoogleSignUp = async () => {
     setError(null);
 
-    const valid = await trigger(["role", "termsAccepted"]);
+    const valid = await trigger(["termsAccepted"]);
     if (!valid) {
       return;
     }
 
-    const role = getValues("role");
+    const role = "customer";
     const termsAccepted = getValues("termsAccepted");
 
     if (!role || !termsAccepted) {
-      setError("Please select your role and accept the terms");
+      setError("Please accept the terms");
       return;
     }
 
@@ -129,25 +143,6 @@ export default function RegisterPage() {
               )}
             </div>
             <div className="space-y-2">
-              <Label>Role</Label>
-              <Select
-                onValueChange={(value) =>
-                  setValue("role", value as RegisterInput["role"])
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="I am a..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="shop_owner">Shop owner</SelectItem>
-                  <SelectItem value="customer">Customer</SelectItem>
-                </SelectContent>
-              </Select>
-              {errors.role && (
-                <p className="text-xs text-destructive">{errors.role.message}</p>
-              )}
-            </div>
-            <div className="space-y-2">
               <label className="flex items-start gap-2 text-sm text-muted-foreground">
                 <input
                   type="checkbox"
@@ -156,11 +151,11 @@ export default function RegisterPage() {
                 />
                 <span>
                   I agree to the app terms, platform policy, and responsible
-                  marketplace use.
+                  marketplace use. <Link href="#" className="text-primary hover:underline">Terms and policy</Link>
                 </span>
               </label>
               {errors.termsAccepted && (
-                <p className="text-xs text-destructive">
+                <p className="text-xs text-white">
                   {errors.termsAccepted.message}
                 </p>
               )}

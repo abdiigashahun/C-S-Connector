@@ -7,10 +7,12 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import {
   AppRole,
-  consumePendingRegistration,
-  getUserPreferences,
+  setUserRoleByEmail,
   setUserPreferences,
 } from "@/lib/user-preferences";
+import { isOwnerEmail } from "@/lib/owner-access";
+import { isAdminEmail } from "@/lib/admin";
+import { getProfileSettingsByEmail } from "@/lib/profile-settings";
 
 export default function ProfilePage() {
   const [userId, setUserId] = useState<string | null>(null);
@@ -18,6 +20,8 @@ export default function ProfilePage() {
   const [email, setEmail] = useState<string | null>(null);
   const [role, setRole] = useState<AppRole | null>(null);
   const [termsAcceptedAt, setTermsAcceptedAt] = useState<string | null>(null);
+  const [phone, setPhone] = useState<string | null>(null);
+  const [showPhone, setShowPhone] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -37,17 +41,41 @@ export default function ProfilePage() {
         return;
       }
 
-      const existingPreference = getUserPreferences(currentUserId);
-      const pendingPreference = existingPreference ? null : consumePendingRegistration();
-      const resolvedPreference = existingPreference ?? pendingPreference;
+      const acceptedAt = new Date().toISOString();
 
-      if (pendingPreference) {
-        setUserPreferences(currentUserId, pendingPreference);
+      const savedProfile = user?.email
+        ? await getProfileSettingsByEmail(user.email)
+        : null;
+
+      if (savedProfile?.name) {
+        setName(savedProfile.name);
+      }
+      setPhone(savedProfile?.phone ?? null);
+      setShowPhone(savedProfile?.showPhone ?? false);
+
+      if (isAdminEmail(user?.email)) {
+        setRole("shop_owner");
+        setTermsAcceptedAt(acceptedAt);
+        return;
       }
 
-      if (resolvedPreference) {
-        setRole(resolvedPreference.role);
-        setTermsAcceptedAt(resolvedPreference.termsAcceptedAt);
+      const owner = await isOwnerEmail(user?.email);
+      const resolvedRole: AppRole = owner ? "shop_owner" : "customer";
+      setRole(resolvedRole);
+      setTermsAcceptedAt(acceptedAt);
+
+      setUserPreferences(currentUserId, {
+        role: resolvedRole,
+        termsAcceptedAt: acceptedAt,
+      });
+
+      if (user?.email) {
+        await setUserRoleByEmail({
+          email: user.email,
+          role: resolvedRole,
+          termsAcceptedAt: acceptedAt,
+          userId: currentUserId,
+        });
       }
     })();
   }, []);
@@ -78,6 +106,12 @@ export default function ProfilePage() {
                 : role === "customer"
                   ? "Customer"
                   : "Not set"}
+            </p>
+            <p className="text-sm">
+              <span className="font-medium">Phone:</span>{" "}
+              {role === "customer" && !showPhone
+                ? "Hidden by your preference"
+                : phone ?? "—"}
             </p>
             <p className="text-sm">
               <span className="font-medium">Terms accepted:</span>{" "}

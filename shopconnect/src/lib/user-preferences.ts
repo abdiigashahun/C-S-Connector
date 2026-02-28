@@ -5,6 +5,14 @@ type UserPreferenceRecord = {
   termsAcceptedAt: string;
 };
 
+type UserRoleApiRecord = {
+  email: string;
+  role: AppRole;
+  terms_accepted_at: string | null;
+  updated_at: string | null;
+  user_id: string | null;
+};
+
 type PendingRegistrationRecord = {
   role: AppRole;
   termsAcceptedAt: string;
@@ -64,4 +72,88 @@ export function consumePendingRegistration(): PendingRegistrationRecord | null {
   }
 
   return pending;
+}
+
+export async function getUserRoleByEmail(
+  email: string
+): Promise<UserPreferenceRecord | null> {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(
+      `/api/user-role?email=${encodeURIComponent(normalizedEmail)}`,
+      {
+        method: "GET",
+        cache: "no-store",
+      }
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = (await response.json()) as { data?: UserRoleApiRecord | null };
+    const record = payload.data;
+
+    if (!record?.role) {
+      return null;
+    }
+
+    return {
+      role: record.role,
+      termsAcceptedAt:
+        record.terms_accepted_at ?? record.updated_at ?? new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function setUserRoleByEmail(value: {
+  email: string;
+  role: AppRole;
+  termsAcceptedAt: string;
+  userId?: string;
+}): Promise<UserPreferenceRecord | null> {
+  const normalizedEmail = value.email.trim().toLowerCase();
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  try {
+    const response = await fetch("/api/user-role", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: normalizedEmail,
+        role: value.role,
+        termsAcceptedAt: value.termsAcceptedAt,
+        userId: value.userId,
+      }),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = (await response.json()) as { data?: UserRoleApiRecord | null };
+    const record = payload.data;
+
+    if (!record?.role) {
+      return null;
+    }
+
+    return {
+      role: record.role,
+      termsAcceptedAt:
+        record.terms_accepted_at ?? record.updated_at ?? value.termsAcceptedAt,
+    };
+  } catch {
+    return null;
+  }
 }

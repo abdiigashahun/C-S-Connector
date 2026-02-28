@@ -3,26 +3,26 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
-import { getAuthSessionUserId } from "@/lib/auth-session";
-import {
-  consumePendingRegistration,
-  getUserPreferences,
-  setUserPreferences,
-} from "@/lib/user-preferences";
+import { getAuthSessionUser } from "@/lib/auth-session";
+import { isAdminEmail } from "@/lib/admin";
+import { isOwnerEmail } from "@/lib/owner-access";
 
 export default function DashboardResolverPage() {
   const router = useRouter();
 
   useEffect(() => {
     (async () => {
-      const getUserIdFromSession = async () => {
+      const getUserFromSession = async () => {
         const session = await authClient.getSession();
-        return getAuthSessionUserId(session);
+        return getAuthSessionUser(session);
       };
 
       let userId: string | undefined;
+      let userEmail: string | undefined;
       for (let attempt = 0; attempt < 8; attempt++) {
-        userId = await getUserIdFromSession();
+        const user = await getUserFromSession();
+        userId = user?.id;
+        userEmail = user?.email;
         if (userId) {
           break;
         }
@@ -35,15 +35,14 @@ export default function DashboardResolverPage() {
         return;
       }
 
-      const existingPreference = getUserPreferences(userId);
-      const pendingPreference = existingPreference ? null : consumePendingRegistration();
-      const resolvedPreference = existingPreference ?? pendingPreference;
-
-      if (pendingPreference) {
-        setUserPreferences(userId, pendingPreference);
+      if (isAdminEmail(userEmail)) {
+        router.replace("/dashboard/admin");
+        return;
       }
 
-      if (resolvedPreference?.role === "shop_owner") {
+      const isOwner = await isOwnerEmail(userEmail);
+
+      if (isOwner) {
         router.replace("/dashboard/owner");
         return;
       }

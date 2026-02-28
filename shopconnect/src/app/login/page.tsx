@@ -109,11 +109,11 @@
                      {...register("termsAccepted")}
                    />
                    <span>
-                     I agree to the app terms and responsible use policy.
+                     I agree to the app terms and responsible use policy. <Link href="#" className="text-primary hover:underline">Terms and policy</Link>
                    </span>
                  </label>
                  {errors.termsAccepted && (
-                   <p className="text-xs text-destructive">
+                   <p className="text-xs text-white">
                      {errors.termsAccepted.message}
                    </p>
                  )}

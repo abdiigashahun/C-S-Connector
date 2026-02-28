@@ -100,6 +100,63 @@ npm run dev
 
 ---
 
+## Database Setup (Required)
+
+Role and admin control now use database records. All new signups are treated as customers by default. Owner access is controlled only by the `owner_emails` table managed from admin page.
+
+Create these tables in Supabase:
+
+```sql
+create table if not exists public.user_roles (
+	email text primary key,
+	role text not null check (role in ('shop_owner', 'customer')),
+	user_id text,
+	terms_accepted_at timestamptz,
+	updated_at timestamptz not null default now()
+);
+
+create table if not exists public.owner_emails (
+	owner_email text primary key,
+	created_at timestamptz not null default now(),
+	updated_at timestamptz not null default now()
+);
+
+create table if not exists public.owner_controls (
+	owner_email text primary key,
+	payment_status text not null default 'pending' check (payment_status in ('pending', 'paid', 'overdue')),
+	payment_note text,
+	is_active boolean not null default true,
+	updated_at timestamptz not null default now()
+);
+
+create table if not exists public.profile_settings (
+	email text primary key,
+	role text not null check (role in ('customer', 'shop_owner')),
+	name text,
+	phone text,
+	preferred_location text,
+	address text,
+	notify_email boolean not null default true,
+	notify_push boolean not null default true,
+	show_phone boolean not null default false,
+	updated_at timestamptz not null default now()
+);
+```
+
+Primary admin email is fixed in code to:
+
+```text
+abdigashahun0@gmail.com
+```
+
+Optional environment (not required for this setup):
+
+```bash
+ADMIN_EMAILS=admin@shopconnect.local,owner1@example.com
+```
+
+---
+
 ## Usage
 
 Open in browser:
