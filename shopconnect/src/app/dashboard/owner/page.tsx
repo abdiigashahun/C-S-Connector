@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -69,6 +69,8 @@ type MarketProduct = {
   price: number;
   category: string;
   image_url?: string | null;
+  owner_email?: string | null;
+  created_at?: string | null;
 };
 
 type OwnerProduct = {
@@ -102,6 +104,8 @@ type ProductDraft = {
   phone: string;
   socialLinks: string;
 };
+
+type MediaRequirement = "one_of_them" | "both_image_video";
 
 const dummyImage =
   "data:image/svg+xml;utf8," +
@@ -157,6 +161,14 @@ export default function OwnerDashboardPage() {
 
   const [draft, setDraft] = useState<ProductDraft>(emptyDraft);
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
+  const [productActionMessage, setProductActionMessage] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isUploadingVideo, setIsUploadingVideo] = useState(false);
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [isDeletingProductId, setIsDeletingProductId] = useState<number | null>(null);
+  const [mediaRequirement, setMediaRequirement] = useState<MediaRequirement>("one_of_them");
+  const imageFileInputRef = useRef<HTMLInputElement | null>(null);
+  const videoFileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -225,15 +237,18 @@ export default function OwnerDashboardPage() {
 
       const { data: ownData } = await supabaseBrowser
         .from("products")
-        .select("id,name,price,category,image_url")
+        .select("id,name,price,category,image_url,owner_email,created_at")
+        .eq("owner_email", sessionEmail)
         .order("created_at", { ascending: false });
 
       setProducts(
         (ownData ?? []).map((item: unknown, index: number) => {
           const product = item as MarketProduct;
-          const daysAgo = index + 1;
-          const createdDate = new Date();
-          createdDate.setDate(createdDate.getDate() - daysAgo);
+          const createdDate = product.created_at ? new Date(product.created_at) : new Date();
+          const daysAgo = Math.max(
+            0,
+            Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24))
+          );
 
           return {
             id: product.id,
@@ -387,24 +402,168 @@ export default function OwnerDashboardPage() {
     });
   };
 
-  const handleSubmitProduct = () => {
+  const uploadProductMedia = async (file: File, mediaType: "image" | "video") => {
+    const ownerEmail = userEmail.trim().toLowerCase();
+    if (!ownerEmail) {
+      setProductActionMessage("Unable to upload media. Please login again.");
+      return null;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("ownerEmail", ownerEmail);
+    formData.append("mediaType", mediaType);
+
+    const response = await fetch("/api/uploads/product-media", {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+      setProductActionMessage(payload?.error ?? "Upload failed.");
+      return null;
+    }
+
+    const payload = (await response.json()) as {
+      data?: { publicUrl?: string; mediaType?: "image" | "video" };
+    };
+
+    return payload.data?.publicUrl ?? null;
+  };
+
+  const handleImageFileSelected = async (file: File) => {
+    setIsUploadingImage(true);
+    setProductActionMessage(null);
+
+    const uploadedUrl = await uploadProductMedia(file, "image");
+
+    if (uploadedUrl) {
+      setDraft((current) => {
+        const nextMedia = [...current.mediaUrls];
+        const firstEmptyIndex = nextMedia.findIndex((url) => url.trim().length === 0);
+        if (firstEmptyIndex >= 0) {
+          nextMedia[firstEmptyIndex] = uploadedUrl;
+        } else {
+          nextMedia.push(uploadedUrl);
+        }
+        return { ...current, mediaUrls: nextMedia };
+      });
+      setProductActionMessage("Image uploaded successfully.");
+    }
+
+    setIsUploadingImage(false);
+  };
+
+  const handleVideoFileSelected = async (file: File) => {
+    setIsUploadingVideo(true);
+    setProductActionMessage(null);
+
+    const uploadedUrl = await uploadProductMedia(file, "video");
+    if (uploadedUrl) {
+      setDraft((current) => ({ ...current, videoUrl: uploadedUrl }));
+      setProductActionMessage("Video uploaded successfully.");
+    }
+
+    setIsUploadingVideo(false);
+  };
+
+  const handleSubmitProduct = async () => {
     const parsedPrice = Number(draft.price);
 
     if (!draft.name.trim() || Number.isNaN(parsedPrice) || parsedPrice <= 0) {
+      setProductActionMessage("Please add a valid product name and price.");
       return;
     }
 
+    setIsSavingProduct(true);
+    setProductActionMessage(null);
+
     const cleanedMedia = draft.mediaUrls.map((url) => url.trim()).filter(Boolean);
+    const cleanedVideo = draft.videoUrl.trim();
+
+    if (mediaRequirement === "both_image_video") {
+      if (cleanedMedia.length === 0 || cleanedVideo.length === 0) {
+        setProductActionMessage("Please upload both image and video for this product.");
+        setIsSavingProduct(false);
+        return;
+      }
+    } else if (cleanedMedia.length === 0 && cleanedVideo.length === 0) {
+      setProductActionMessage("Please upload at least one media: image or video.");
+      setIsSavingProduct(false);
+      return;
+    }
+
+    let persistedId = editingProductId ?? Date.now();
+
+    if (editingProductId) {
+      const updateResponse = await fetch("/api/owner-products", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: editingProductId,
+          name: draft.name.trim(),
+          description: draft.description.trim() || "No description provided.",
+          price: parsedPrice,
+          category: draft.category,
+          imageUrl: cleanedMedia[0] ?? null,
+        }),
+      });
+
+      const updatePayload = (await updateResponse.json().catch(() => null)) as
+        | { error?: string; data?: { id?: number | null } }
+        | null;
+
+      if (!updateResponse.ok) {
+        setProductActionMessage(updatePayload?.error ?? "Unable to update product.");
+        setIsSavingProduct(false);
+        return;
+      }
+
+      persistedId = updatePayload?.data?.id ?? editingProductId;
+    } else {
+      const createResponse = await fetch("/api/owner-products", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: draft.name.trim(),
+          description: draft.description.trim() || "No description provided.",
+          price: parsedPrice,
+          category: draft.category,
+          imageUrl: cleanedMedia[0] ?? null,
+        }),
+      });
+
+      const createPayload = (await createResponse.json().catch(() => null)) as
+        | { error?: string; data?: { id?: number | null } }
+        | null;
+
+      if (!createResponse.ok) {
+        setProductActionMessage(createPayload?.error ?? "Unable to create product.");
+        setIsSavingProduct(false);
+        return;
+      }
+
+      if (createPayload?.data?.id) {
+        persistedId = createPayload.data.id;
+      }
+    }
 
     const nextProduct: OwnerProduct = {
-      id: editingProductId ?? Date.now(),
+      id: persistedId,
       name: draft.name.trim(),
       description: draft.description.trim() || "No description provided.",
       price: parsedPrice,
       category: draft.category,
       image_url: cleanedMedia[0] ?? null,
       mediaUrls: cleanedMedia,
-      videoUrl: draft.videoUrl.trim(),
+      videoUrl: cleanedVideo,
       location: draft.location.trim() || "Addis Ababa",
       phone: draft.phone.trim() || "+251 9XX XXX XXX",
       socialLinks: draft.socialLinks.trim(),
@@ -419,7 +578,7 @@ export default function OwnerDashboardPage() {
     if (editingProductId) {
       setProducts((current) =>
         current.map((product) =>
-          product.id === editingProductId ? { ...product, ...nextProduct, id: product.id } : product
+          product.id === editingProductId ? { ...product, ...nextProduct, id: persistedId } : product
         )
       );
     } else {
@@ -428,6 +587,8 @@ export default function OwnerDashboardPage() {
 
     setDraft(emptyDraft);
     setEditingProductId(null);
+    setProductActionMessage("Product saved to Supabase successfully.");
+    setIsSavingProduct(false);
   };
 
   const editProduct = (product: OwnerProduct) => {
@@ -445,8 +606,31 @@ export default function OwnerDashboardPage() {
     });
   };
 
-  const deleteProduct = (productId: number) => {
+  const deleteProduct = async (productId: number) => {
+    setIsDeletingProductId(productId);
+    setProductActionMessage(null);
+
+    const deleteResponse = await fetch("/api/owner-products", {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ id: productId }),
+    });
+
+    const deletePayload = (await deleteResponse.json().catch(() => null)) as
+      | { error?: string }
+      | null;
+
+    if (!deleteResponse.ok) {
+      setProductActionMessage(deletePayload?.error ?? "Unable to delete product.");
+      setIsDeletingProductId(null);
+      return;
+    }
+
     setProducts((current) => current.filter((product) => product.id !== productId));
+    setProductActionMessage("Product deleted successfully.");
+    setIsDeletingProductId(null);
   };
 
   const moveProduct = (productId: number, direction: "up" | "down") => {
@@ -521,7 +705,7 @@ export default function OwnerDashboardPage() {
                 </Sheet>
 
                 <div>
-                  <p className="text-xs text-muted-foreground">ShopConnect</p>
+                  
                   <p className="text-sm font-semibold">Owner Dashboard</p>
                 </div>
               </div>
@@ -735,8 +919,12 @@ export default function OwnerDashboardPage() {
               <Button asChild>
                 <Link href="/products/new">Post via full product page</Link>
               </Button>
-              <Button variant="outline" onClick={handleSubmitProduct}>
-                {editingProductId ? "Update draft product" : "Save draft product"}
+              <Button variant="outline" onClick={handleSubmitProduct} disabled={isSavingProduct}>
+                {isSavingProduct
+                  ? "Saving..."
+                  : editingProductId
+                    ? "Update product"
+                    : "Upload product"}
               </Button>
               {editingProductId ? (
                 <Button
@@ -750,6 +938,9 @@ export default function OwnerDashboardPage() {
                 </Button>
               ) : null}
             </div>
+            {productActionMessage ? (
+              <p className="mb-4 text-sm text-muted-foreground">{productActionMessage}</p>
+            ) : null}
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2 md:col-span-2">
@@ -828,15 +1019,86 @@ export default function OwnerDashboardPage() {
                 />
               </div>
 
-              <div className="space-y-3 md:col-span-2">
-                <div className="flex items-center justify-between">
-                  <Label>Product images</Label>
+              <div className="space-y-3 md:col-span-2 rounded-lg border p-4">
+                <div>
+                  <p className="text-sm font-medium">Product media upload</p>
+                  <p className="text-xs text-muted-foreground">
+                    Upload an image or video, or paste media links manually.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Media requirement</Label>
+                  <Select
+                    value={mediaRequirement}
+                    onValueChange={(value) =>
+                      setMediaRequirement(value as MediaRequirement)
+                    }
+                  >
+                    <SelectTrigger className="w-full md:w-80">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="one_of_them">One of them (image or video)</SelectItem>
+                      <SelectItem value="both_image_video">Both image and video</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    ref={imageFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) {
+                        void handleImageFileSelected(file);
+                      }
+                      event.currentTarget.value = "";
+                    }}
+                  />
+                  <input
+                    ref={videoFileInputRef}
+                    type="file"
+                    accept="video/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) {
+                        void handleVideoFileSelected(file);
+                      }
+                      event.currentTarget.value = "";
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isUploadingImage}
+                    onClick={() => imageFileInputRef.current?.click()}
+                  >
+                    <ImagePlus className="mr-1 size-4" />
+                    {isUploadingImage ? "Uploading image..." : "Upload image"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isUploadingVideo}
+                    onClick={() => videoFileInputRef.current?.click()}
+                  >
+                    <Video className="mr-1 size-4" />
+                    {isUploadingVideo ? "Uploading video..." : "Upload video"}
+                  </Button>
                   <Button type="button" variant="outline" size="sm" onClick={addMediaField}>
-                    <ImagePlus className="mr-1 size-4" /> Add image
+                    Add image URL
                   </Button>
                 </div>
 
                 <div className="space-y-2">
+                  <Label>Image URLs</Label>
                   {draft.mediaUrls.map((url, index) => (
                     <div key={`${index}-${url}`} className="flex items-center gap-2">
                       <Input
@@ -854,6 +1116,16 @@ export default function OwnerDashboardPage() {
                       </Button>
                     </div>
                   ))}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="product-video">Video URL</Label>
+                  <Input
+                    id="product-video"
+                    value={draft.videoUrl}
+                    onChange={(event) => updateDraft("videoUrl", event.target.value)}
+                    placeholder="https://..."
+                  />
                 </div>
 
                 {draft.mediaUrls.some((url) => url.trim().length > 0) ? (
@@ -875,20 +1147,6 @@ export default function OwnerDashboardPage() {
                       ))}
                   </div>
                 ) : null}
-              </div>
-
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="product-video">Optional video link</Label>
-                <div className="relative">
-                  <Video className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    id="product-video"
-                    className="pl-9"
-                    value={draft.videoUrl}
-                    onChange={(event) => updateDraft("videoUrl", event.target.value)}
-                    placeholder="https://youtube.com/..."
-                  />
-                </div>
               </div>
             </div>
           </div>
@@ -1051,8 +1309,14 @@ export default function OwnerDashboardPage() {
                     <Button size="sm" variant="outline" onClick={() => moveProduct(product.id, "down")}>
                       <ArrowDown className="mr-1 size-3" /> Down
                     </Button>
-                    <Button size="sm" variant="destructive" onClick={() => deleteProduct(product.id)}>
-                      <Trash2 className="mr-1 size-3" /> Delete
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => deleteProduct(product.id)}
+                      disabled={isDeletingProductId === product.id}
+                    >
+                      <Trash2 className="mr-1 size-3" />
+                      {isDeletingProductId === product.id ? "Deleting..." : "Delete"}
                     </Button>
                   </div>
                 </CardContent>

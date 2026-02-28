@@ -143,6 +143,24 @@ create table if not exists public.profile_settings (
 );
 ```
 
+Ensure products table tracks ownership:
+
+```sql
+alter table public.products
+add column if not exists owner_email text;
+
+create index if not exists products_owner_email_idx
+on public.products(owner_email);
+```
+
+Create a Storage bucket for product media uploads:
+
+```sql
+insert into storage.buckets (id, name, public)
+values ('product-media', 'product-media', true)
+on conflict (id) do nothing;
+```
+
 Primary admin email is fixed in code to:
 
 ```text
