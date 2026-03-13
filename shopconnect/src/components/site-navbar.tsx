@@ -9,13 +9,10 @@ export function SiteNavbar() {
           href="/"
           className="group inline-flex items-center gap-2 rounded-md px-2 py-1 transition hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 via-indigo-500 to-violet-600 text-sm font-bold text-white shadow-sm ring-1 ring-black/5 transition duration-300 group-hover:scale-105 group-hover:shadow-md">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-linear-to-br from-sky-500 via-indigo-500 to-violet-600 text-sm font-bold text-white shadow-sm ring-1 ring-black/5 transition duration-300 group-hover:scale-105 group-hover:shadow-md">
             SC
           </span>
-          <span className="flex flex-col leading-tight">
-            <span className="text-sm font-semibold tracking-tight text-foreground">ShopConnect</span>
-            <span className="text-xs text-muted-foreground">Best logo • S &amp; C</span>
-          </span>
+          <span className="sr-only">ShopConnect</span>
         </Link>
         <div className="hidden items-center gap-2 md:flex">
           <Button asChild size="sm" variant="ghost">
